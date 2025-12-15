@@ -8,7 +8,7 @@ import time
 import random
 
 
-def get_coupang_reviews(url, target_review_count=100):
+def get_product_reviews(url, target_review_count=100):
     """
     쿠팡 상품 URL을 받아 상품 정보와 리뷰를 수집하는 함수
     Args:

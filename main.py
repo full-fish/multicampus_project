@@ -1,6 +1,6 @@
 # main.py
 import json
-from get_coupang_reviews import get_coupang_reviews
+from get_product_reviews import get_product_reviews
 
 
 def main():
@@ -14,7 +14,7 @@ def main():
 
     # 크롤링 실행 (모듈에서 함수 호출)
     print(">>> 크롤러 실행을 시작합니다...")
-    final_data = get_coupang_reviews(target_url, target_review_count=TARGET_COUNT)
+    final_data = get_product_reviews(target_url, target_review_count=TARGET_COUNT)
 
     if final_data["product_info"]:
         print(f"\n수집 성공! (총 리뷰: {final_data['reviews']['count']}개)")
