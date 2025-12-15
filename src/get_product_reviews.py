@@ -14,17 +14,14 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
     }
 
     try:
-        print(f"[get_reviews] 상품 페이지 접속: {url}")
+        print(f"[Reviewer] 상품 페이지 접속: {url}")
         driver.get(url)
         time.sleep(random.uniform(3, 5))
 
         html = driver.page_source
         soup = BeautifulSoup(html, "html.parser")
 
-        # 1. Product ID (순번으로 대체)
         product_id = str(rank_num)
-
-        # 2. 상품명
         product_name = "Unknown"
         try:
             product_name = soup.select_one("span.twc-font-bold").text.strip()
@@ -34,7 +31,6 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
             except:
                 pass
 
-        # 3. 가격
         price = "0"
         try:
             price_tag = soup.select_one("div.price-amount.final-price-amount")
@@ -42,7 +38,6 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
                 price_tag = soup.select_one(
                     "div.option-table-list__option--selected div.option-table-list__option-price"
                 )
-
             if price_tag:
                 price = (
                     price_tag.text.strip()
@@ -54,7 +49,6 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
         except:
             pass
 
-        # 4. 배송 유형
         delivery_type = "일반배송"
         try:
             badge_img = soup.select_one("div.price-badge img")
@@ -71,7 +65,6 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
         except:
             pass
 
-        # 5. 총 리뷰 수
         total_reviews = "0"
         try:
             review_count_text = soup.select_one("span.rating-count-txt").text.strip()
@@ -79,7 +72,6 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
         except:
             pass
 
-        # 6. 카테고리 추출
         category_str = ""
         try:
             crumb_links = soup.select("ul.breadcrumb li a")
@@ -90,7 +82,7 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
             pass
 
         result_data["product_info"] = {
-            "product_id": product_id,  # 1, 2, 3... 순서
+            "product_id": product_id,
             "category_path": category_str,
             "product_name": product_name,
             "price": price,
@@ -104,9 +96,10 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
             f"   -> 가격: {price}원 / 배송: {delivery_type} / 총리뷰: {total_reviews}"
         )
 
-        # --- 리뷰 수집 로직 ---
+        # --- 리뷰 수집 시작 ---
         temp_reviews_list = []
 
+        # 초기 리뷰 로딩을 위한 스크롤
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight * 0.3);")
         time.sleep(1)
 
@@ -120,6 +113,7 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
         except:
             pass
 
+        # 최신순 정렬
         try:
             sort_btn = WebDriverWait(driver, 5).until(
                 EC.element_to_be_clickable(
@@ -135,6 +129,7 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
         collected_count = 0
 
         while collected_count < target_review_count:
+            # 1. 현재 페이지 리뷰 파싱
             curr_soup = BeautifulSoup(driver.page_source, "html.parser")
             review_articles = curr_soup.select("article.twc-border-bluegray-200")
 
@@ -146,6 +141,12 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
                     break
 
                 try:
+                    content_span = article.select_one("span.twc-bg-white")
+                    content = content_span.text.strip() if content_span else ""
+
+                    if not content:
+                        continue
+
                     rating = 0
                     rating_div = article.select_one(
                         r"div.twc-inline-flex.twc-items-center.twc-gap-\[2px\]"
@@ -161,9 +162,6 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
                     )
                     title = title_div.text.strip() if title_div else ""
 
-                    content_span = article.select_one("span.twc-bg-white")
-                    content = content_span.text.strip() if content_span else ""
-
                     has_image = False
                     img_container = article.select_one(
                         "div.twc-overflow-x-auto.twc-scrollbar-hidden"
@@ -178,46 +176,82 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
                         "has_image": has_image,
                         "title": title,
                         "content": content,
-                        "full_text": f"{title}{content}",
+                        "full_text": f"{title} {content}",
                     }
+
                     temp_reviews_list.append(review_obj)
                     collected_count += 1
+
                 except:
                     continue
 
             print(
-                f"   -> {current_page_num}페이지 완료 ({collected_count}/{target_review_count})"
+                f"   -> {current_page_num}페이지 탐색 중... (수집된 유효 리뷰: {collected_count}/{target_review_count})"
             )
 
             if collected_count >= target_review_count:
                 break
 
-            next_num = current_page_num + 1
-            try:
-                if current_page_num % 10 == 0:
-                    next_btn = WebDriverWait(driver, 5).until(
+            # 2. 페이지 이동 로직
+            # [CASE 1] 10페이지 단위 이동 (화살표 버튼 클릭 후 11, 21... 버튼 명시적 클릭)
+            if current_page_num % 10 == 0:
+                print(
+                    f"   -> 페이지 블록 이동 중... ({current_page_num} -> {current_page_num + 1})"
+                )
+                try:
+                    # 1. 화살표 버튼 클릭
+                    next_arrow_btn = WebDriverWait(driver, 5).until(
                         EC.element_to_be_clickable(
                             (
                                 By.XPATH,
-                                "//div[contains(@class, 'twc-mt-[24px]')]//button[last()]",
+                                "//div[contains(@class, 'twc-mt-[24px]') and contains(@class, 'twc-flex-wrap')]//button[last()]",
                             )
                         )
                     )
-                else:
+                    driver.execute_script(
+                        "arguments[0].scrollIntoView({block: 'center'});",
+                        next_arrow_btn,
+                    )
+                    driver.execute_script("arguments[0].click();", next_arrow_btn)
+                    time.sleep(random.uniform(1.5, 2.5))
+
+                    # 2. 다음 블록의 첫 번째 페이지(예: 11) 버튼을 명시적으로 클릭하여 안정화
+                    next_page_number = current_page_num + 1
+                    next_block_first_btn = WebDriverWait(driver, 5).until(
+                        EC.element_to_be_clickable(
+                            (
+                                By.XPATH,
+                                f"//button[.//span[text()='{next_page_number}']]",
+                            )
+                        )
+                    )
+                    driver.execute_script("arguments[0].click();", next_block_first_btn)
+                    time.sleep(random.uniform(1.2, 1.5))
+
+                    current_page_num = next_page_number
+                    continue
+                except:
+                    print("   -> 다음 페이지(화살표 또는 새 블록)가 없습니다.")
+                    break
+
+            # [CASE 2] 일반 페이지 번호 이동 (1~9, 11~19 ...)
+            else:
+                next_num = current_page_num + 1
+                try:
                     next_btn = WebDriverWait(driver, 5).until(
                         EC.element_to_be_clickable(
                             (By.XPATH, f"//button[.//span[text()='{next_num}']]")
                         )
                     )
-
-                driver.execute_script(
-                    "arguments[0].scrollIntoView({block: 'center'});", next_btn
-                )
-                driver.execute_script("arguments[0].click();", next_btn)
-                time.sleep(random.uniform(1.2, 1.5))
-                current_page_num += 1
-            except:
-                break
+                    driver.execute_script(
+                        "arguments[0].scrollIntoView({block: 'center'});", next_btn
+                    )
+                    driver.execute_script("arguments[0].click();", next_btn)
+                    time.sleep(random.uniform(0.7, 1.0))
+                    current_page_num += 1
+                except:
+                    print("   -> 다음 페이지 번호가 없습니다.")
+                    break
 
         result_data["reviews"] = {
             "count": len(temp_reviews_list),
@@ -225,6 +259,6 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
         }
 
     except Exception as e:
-        print(f"[get_reviews] 에러 발생: {e}")
+        print(f"[Reviewer] 에러 발생: {e}")
 
     return result_data
