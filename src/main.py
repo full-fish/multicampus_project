@@ -7,7 +7,7 @@ from get_product_reviews import get_product_reviews
 
 
 def main():
-    KEYWORD = "사과"
+    KEYWORDS = ["사과", "배", "포도"]
     PRODUCT_LIMIT = 3
     REVIEW_TARGET = 30
 
@@ -22,53 +22,68 @@ def main():
     driver = uc.Chrome(options=options, use_subprocess=False)
 
     try:
-        print(f">>> [{KEYWORD}] 검색 시작...")
-        urls = get_product_urls(driver, KEYWORD, max_products=PRODUCT_LIMIT)
-        print(f">>> 수집된 URL: {len(urls)}개")
-
-        crawled_data_list = []
-        top_category = ""
-
-        for idx, url in enumerate(urls):
-            print(f"\n[{idx+1}/{len(urls)}] 상품 크롤링 중...")
-
+        for k_idx, keyword in enumerate(KEYWORDS):
             try:
-                # [수정] idx + 1 을 rank_num 인자로 전달 (1, 2, 3...)
-                data = get_product_reviews(
-                    driver, url, idx + 1, target_review_count=REVIEW_TARGET
-                )
+                print(f"\n{'='*50}")
+                print(f">>> [{k_idx+1}/{len(KEYWORDS)}] 키워드 검색 시작: {keyword}")
+                print(f"{'='*50}")
 
-                if data["product_info"]:
-                    current_category = data["product_info"].get("category_path")
-                    if not top_category and current_category:
-                        top_category = current_category
+                # 1. URL 수집
+                urls = get_product_urls(driver, keyword, max_products=PRODUCT_LIMIT)
+                print(f">>> [{keyword}] 수집된 URL: {len(urls)}개")
 
-                    crawled_data_list.append(data)
-                    print(f"  -> 완료: 리뷰 {data['reviews']['count']}개")
+                crawled_data_list = []
+                top_category = ""
+
+                # 2. 리뷰 수집
+                for idx, url in enumerate(urls):
+                    print(f"\n   [{idx+1}/{len(urls)}] 상품 크롤링 중 ({keyword})...")
+
+                    try:
+                        data = get_product_reviews(
+                            driver, url, idx + 1, target_review_count=REVIEW_TARGET
+                        )
+
+                        if data["product_info"]:
+                            current_category = data["product_info"].get("category_path")
+                            if not top_category and current_category:
+                                top_category = current_category
+
+                            crawled_data_list.append(data)
+                            print(f"     -> 완료: 리뷰 {data['reviews']['count']}개")
+                        else:
+                            print("     -> 실패")
+
+                        time.sleep(random.uniform(3, 5))
+
+                    except Exception as e:
+                        print(f"     -> 에러: {e}")
+
+                # 3. JSON 구조 생성 (해당 키워드용)
+                result_json = {
+                    "search_name": keyword,
+                    "category": top_category,
+                    "data": crawled_data_list,
+                }
+
+                # 4. JSON 파일 저장 (파일명에 키워드 포함)
+                if crawled_data_list:
+                    filename = f"result_{keyword}.json"
+                    with open(filename, "w", encoding="utf-8") as f:
+                        json.dump(result_json, f, indent=2, ensure_ascii=False)
+                    print(f"\n✅ [{keyword}] 저장 완료: {filename}")
                 else:
-                    print("  -> 실패")
+                    print(f"\n[{keyword}] 수집된 데이터가 없습니다.")
 
-                time.sleep(random.uniform(3, 5))
+                # 다음 키워드로 넘어가기 전 잠시 대기 (차단 방지)
+                time.sleep(random.uniform(5, 8))
 
             except Exception as e:
-                print(f"  -> 에러: {e}")
-
-        result_json = {
-            "search_name": KEYWORD,
-            "category": top_category,
-            "data": crawled_data_list,
-        }
-
-        if crawled_data_list:
-            filename = f"result_{KEYWORD}.json"
-            with open(filename, "w", encoding="utf-8") as f:
-                json.dump(result_json, f, indent=2, ensure_ascii=False)
-            print(f"\n 저장 완료: {filename}")
-        else:
-            print("\n수집된 데이터가 없습니다.")
+                print(f"\n!!! [{keyword}] 처리 중 치명적 오류 발생: {e}")
+                continue  # 에러가 나도 다음 키워드로 계속 진행
 
     finally:
-        print(">>> 브라우저를 종료합니다.")
+        print("\n>>> 모든 작업이 끝났으므로 브라우저를 종료합니다.")
         driver.quit()
 
 
