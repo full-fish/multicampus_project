@@ -14,7 +14,7 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
     }
 
     try:
-        print(f"[Reviewer] 상품 페이지 접속: {url}")
+        print(f"[get_reviews] 상품 페이지 접속: {url}")
         driver.get(url)
         time.sleep(random.uniform(3, 5))
 
@@ -225,6 +225,6 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
         }
 
     except Exception as e:
-        print(f"[Reviewer] 에러 발생: {e}")
+        print(f"[get_reviews] 에러 발생: {e}")
 
     return result_data

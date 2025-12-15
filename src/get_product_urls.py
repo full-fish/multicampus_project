@@ -16,7 +16,7 @@ def get_product_urls(driver, keyword, max_products=5):
     product_urls = []
 
     try:
-        print(f"[Collector] '{keyword}' 검색 페이지 접속 중...")
+        print(f"[get_urls] '{keyword}' 검색 페이지 접속 중...")
         driver.get(search_url)
         time.sleep(random.uniform(2, 4))
 
@@ -32,7 +32,7 @@ def get_product_urls(driver, keyword, max_products=5):
 
         links = soup.select("ul#product-list > li > a")
 
-        print(f"[Collector] 발견된 상품 링크: {len(links)}개")
+        print(f"[get_urls] 발견된 상품 링크: {len(links)}개")
 
         count = 0
         for link in links:
@@ -53,6 +53,6 @@ def get_product_urls(driver, keyword, max_products=5):
             count += 1
 
     except Exception as e:
-        print(f"[Collector] 에러 발생: {e}")
+        print(f"[get_urls] 에러 발생: {e}")
 
     return product_urls
