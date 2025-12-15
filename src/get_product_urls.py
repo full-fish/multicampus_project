@@ -18,7 +18,7 @@ def get_product_urls(driver, keyword, max_products=5):
     try:
         print(f"[get_urls] '{keyword}' 검색 페이지 접속 중...")
         driver.get(search_url)
-        time.sleep(random.uniform(2, 4))
+        time.sleep(random.uniform(2.5, 3.5))
 
         WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.ID, "product-list"))

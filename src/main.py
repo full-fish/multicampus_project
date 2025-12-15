@@ -71,12 +71,12 @@ def main():
                     filename = f"result_{keyword}.json"
                     with open(filename, "w", encoding="utf-8") as f:
                         json.dump(result_json, f, indent=2, ensure_ascii=False)
-                    print(f"\n✅ [{keyword}] 저장 완료: {filename}")
+                    print(f"\n[{keyword}] 저장 완료: {filename}")
                 else:
                     print(f"\n[{keyword}] 수집된 데이터가 없습니다.")
 
                 # 다음 키워드로 넘어가기 전 잠시 대기 (차단 방지)
-                time.sleep(random.uniform(5, 8))
+                time.sleep(random.uniform(2, 3))
 
             except Exception as e:
                 print(f"\n!!! [{keyword}] 처리 중 치명적 오류 발생: {e}")
