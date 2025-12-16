@@ -6,7 +6,7 @@
   "data": [
     {
       "product_info": {
-        "product_id": "string", // 'id'가 'product_id'로 이름 변경됨
+        "product_id": "string", 
         "category_path": "string",
         "product_name": "string",
         "price": "string",

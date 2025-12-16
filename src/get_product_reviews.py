@@ -2,6 +2,7 @@ import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from bs4 import BeautifulSoup
 import time
 import random
@@ -15,16 +16,49 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
 
     try:
         print(f"[Reviewer] 상품 페이지 접속: {url}")
-        driver.get(url)
+        print("\n0")
+
+        max_retries = 3  # 최대 3번 시도
+        for attempt in range(max_retries):
+            try:
+                driver.set_page_load_timeout(10)
+
+                driver.get(url)
+
+                try:
+                    alert = driver.switch_to.alert
+                    print(f"   ->  접속 직후 경고창 감지: {alert.text}")
+                    alert.accept()
+                except:
+                    pass
+
+                print(f"\n   -> 접속 성공 (시도 {attempt+1}/{max_retries})")
+                break  # 성공하면 반복문 탈출
+
+            except (TimeoutException, WebDriverException) as e:
+                print(f"   -> [접속 실패] 시도 {attempt+1}/{max_retries} - 에러: {e}")
+                time.sleep(random.uniform(5, 10))  # 실패 시 잠시 대기 후 재시도
+
+                if attempt == max_retries - 1:
+                    print("   -> [최종 실패] 페이지에 접속할 수 없습니다.")
+                    return result_data  # 빈 데이터 반환하고 종료
+        print("\n1")
         time.sleep(random.uniform(3, 5))
 
         html = driver.page_source
+        print("\n2")
+
         soup = BeautifulSoup(html, "html.parser")
+        print("\n3")
 
         product_id = str(rank_num)
+
         product_name = "Unknown"
+
         try:
             product_name = soup.select_one("span.twc-font-bold").text.strip()
+            print("\n4")
+
         except:
             try:
                 product_name = soup.select_one("h2.prod-buy-header__title").text.strip()
@@ -210,7 +244,7 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
                         next_arrow_btn,
                     )
                     driver.execute_script("arguments[0].click();", next_arrow_btn)
-                    time.sleep(random.uniform(0.8, 1.0))
+                    time.sleep(random.uniform(0.4, 0.5))
 
                     next_page_number = current_page_num + 1
                     next_block_first_btn = WebDriverWait(driver, 5).until(
@@ -222,7 +256,7 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
                         )
                     )
                     driver.execute_script("arguments[0].click();", next_block_first_btn)
-                    time.sleep(random.uniform(0.5, 0.6))
+                    time.sleep(random.uniform(0.25, 0.3))
 
                     current_page_num = next_page_number
                     continue
@@ -242,7 +276,7 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
                         "arguments[0].scrollIntoView({block: 'center'});", next_btn
                     )
                     driver.execute_script("arguments[0].click();", next_btn)
-                    time.sleep(random.uniform(0.5, 0.6))
+                    time.sleep(random.uniform(0.25, 0.3))
                     current_page_num += 1
                 except:
                     print("   -> 다음 페이지 번호가 없습니다.")
