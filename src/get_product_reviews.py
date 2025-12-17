@@ -9,30 +9,31 @@ import random
 
 
 def get_product_reviews(driver, url, rank_num, target_review_count=100):
+    # 최종 결과를 담을 구조
     result_data = {
         "product_info": {},
-        "reviews": {},
+        "reviews": {"total_count": 0, "text_count": 0, "data": []},
     }
 
-    # [변경] 내부 try-except를 최소화하고, 재시도 로직을 제거함
-    # 에러 발생 시 main.py가 잡아서 브라우저를 재부팅하도록 유도
     print(f"[Reviewer] 상품 페이지 접속: {url}")
 
     # 1. 페이지 접속
-    driver.set_page_load_timeout(30)  # 타임아웃 넉넉하게
+    driver.set_page_load_timeout(30)
     driver.get(url)
 
-    # 접속 직후 알림창 처리 (이건 여기서 해주는 게 좋음)
+    # 접속 직후 알림창 처리
     try:
         alert = driver.switch_to.alert
-        print(f"   -> ⚠️ 접속 직후 경고창 감지: {alert.text}")
+        print(f"   -> 접속 직후 경고창 감지: {alert.text}")
         alert.accept()
     except:
         pass
 
     time.sleep(random.uniform(3, 5))
 
-    # 2. HTML 파싱 시작
+    # -------------------------------------------------------
+    # [기본 정보 파싱]
+    # -------------------------------------------------------
     html = driver.page_source
     soup = BeautifulSoup(html, "html.parser")
 
@@ -45,8 +46,10 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
             product_name_span = product_name_h1.select_one("span.twc-font-bold")
             if product_name_span:
                 product_name = product_name_span.text.strip()
-
     except:
+        pass
+
+    if product_name == "Unknown":
         try:
             product_name = soup.select_one("h2.prod-buy-header__title").text.strip()
         except:
@@ -115,10 +118,9 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
     print(f"   -> 상품ID: {product_id} / 상품명: {product_name}")
     print(f"   -> 가격: {price}원 / 배송: {delivery_type} / 총리뷰: {total_reviews}")
 
-    # --- 리뷰 수집 시작 ---
-    temp_reviews_list = []
-
-    # 초기 리뷰 로딩을 위한 스크롤
+    # -------------------------------------------------------
+    # [리뷰 섹션 준비]
+    # -------------------------------------------------------
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight * 0.3);")
     time.sleep(1)
 
@@ -130,9 +132,10 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
         driver.execute_script("window.scrollBy(0, -200);")
         time.sleep(2)
     except:
-        pass
+        print("   -> 리뷰 섹션을 찾을 수 없습니다. (리뷰 없음 추정)")
+        return result_data
 
-    # 최신순 정렬
+    # 최신순 정렬 (기본 설정)
     try:
         sort_btn = WebDriverWait(driver, 5).until(
             EC.element_to_be_clickable(
@@ -144,133 +147,208 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
     except:
         pass
 
-    current_page_num = 1
-    collected_count = 0  # 내용이 있는 리뷰 개수 (종료 기준)
+    # -------------------------------------------------------
+    # ★ [핵심] 별점별 순회 수집 로직 적용 (Test Script 로직 반영)
+    # -------------------------------------------------------
 
-    while collected_count < target_review_count:
-        # 1. 현재 페이지 리뷰 파싱
-        curr_soup = BeautifulSoup(driver.page_source, "html.parser")
-        review_articles = curr_soup.select("article.twc-border-bluegray-200")
+    STAR_RATINGS = [
+        {"score": 5, "text": "최고"},
+        {"score": 4, "text": "좋음"},
+        {"score": 3, "text": "보통"},
+        {"score": 2, "text": "별로"},
+        {"score": 1, "text": "나쁨"},
+    ]
 
-        if not review_articles:
+    all_reviews_list = []
+    total_text_collected = 0
+
+    for star_info in STAR_RATINGS:
+        if total_text_collected >= target_review_count:
+            print("   -> 전체 목표 수량을 달성하여 수집을 종료합니다.")
             break
 
-        for article in review_articles:
-            if collected_count >= target_review_count:
+        target_score = star_info["score"]
+        target_text = star_info["text"]
+
+        print(f"\n   >>> [별점 변경] '{target_text}' 리뷰 수집 시작")
+
+        # 1. 별점 드롭다운 열기 (Test Script의 XPath 사용)
+        try:
+            dropdown_trigger = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable(
+                    (
+                        By.XPATH,
+                        "//div[contains(@class, 'twc-flex') and contains(@class, 'twc-items-center') and contains(@class, 'twc-cursor-pointer')]//div[contains(@class, 'twc-text-[14px]')]",
+                    )
+                )
+            )
+            # 현재 선택된 텍스트 확인 (디버깅용)
+            # print(f"     -> 현재 드롭다운 상태: {dropdown_trigger.text.strip()}")
+
+            driver.execute_script("arguments[0].click();", dropdown_trigger)
+            time.sleep(1)  # 팝업 애니메이션 대기
+
+        except Exception as e:
+            print(f"     -> [SKIP] 드롭다운 버튼 클릭 실패: {e}")
+            continue
+
+        # 2. 팝업 내 옵션 선택 (Test Script의 XPath 및 로직 사용)
+        try:
+            # 텍스트가 정확히 일치하는 요소를 찾음 (text()='...')
+            option_xpath = (
+                f"//*[@data-radix-popper-content-wrapper]//*[text()='{target_text}']"
+            )
+
+            star_option = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, option_xpath))
+            )
+
+            # 클릭 전 스크롤 및 클릭 (안정성 확보)
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block: 'center'});", star_option
+            )
+            time.sleep(0.5)
+            driver.execute_script("arguments[0].click();", star_option)
+
+            print(f"     -> 필터 적용 완료: {target_text}")
+            time.sleep(3)  # 리스트 갱신 대기 (중요)
+
+        except Exception as e:
+            print(f"     -> [SKIP] 옵션('{target_text}') 클릭 실패: {e}")
+            try:
+                driver.execute_script("document.body.click();")
+            except:
+                pass
+            continue
+
+        # ---------------------------------------------------
+        # [페이지네이션] 해당 별점 내에서 페이지 넘기며 수집
+        # ---------------------------------------------------
+        current_page_num = 1
+        star_collected_count = 0
+        STAR_LIMIT = target_review_count
+
+        while star_collected_count < STAR_LIMIT:
+            if total_text_collected >= target_review_count:
                 break
 
-            try:
-                content_span = article.select_one("span.twc-bg-white")
-                content = content_span.text.strip() if content_span else ""
+            # 리뷰 파싱
+            curr_soup = BeautifulSoup(driver.page_source, "html.parser")
+            review_articles = curr_soup.select("article.twc-border-bluegray-200")
 
-                rating = 0
-                rating_div = article.select_one(
-                    r"div.twc-inline-flex.twc-items-center.twc-gap-\[2px\]"
-                )
-                if rating_div:
-                    rating = len(rating_div.select("i.twc-bg-full-star"))
+            if not review_articles:
+                print(f"     -> 더 이상 표시할 리뷰가 없습니다.")
+                break
 
-                date_div = article.select_one("div.twc-text-bluegray-700")
-                date = date_div.text.strip() if date_div else ""
+            for article in review_articles:
+                if total_text_collected >= target_review_count:
+                    break
 
-                title_div = article.select_one(
-                    "div.twc-font-bold.twc-text-bluegray-900"
-                )
-                title = title_div.text.strip() if title_div else ""
+                try:
+                    content_span = article.select_one("span.twc-bg-white")
+                    content = content_span.text.strip() if content_span else ""
 
-                has_image = False
-                img_container = article.select_one(
-                    "div.twc-overflow-x-auto.twc-scrollbar-hidden"
-                )
-                if img_container and img_container.select_one("img"):
-                    has_image = True
+                    rating = 0
+                    rating_div = article.select_one(
+                        r"div.twc-inline-flex.twc-items-center.twc-gap-\[2px\]"
+                    )
+                    if rating_div:
+                        rating = len(rating_div.select("i.twc-bg-full-star"))
 
-                review_obj = {
-                    "id": len(temp_reviews_list) + 1,
-                    "date": date,
-                    "rating": rating,
-                    "has_image": has_image,
-                    "title": title,
-                    "content": content,
-                    "full_text": f"{title} {content}",
-                }
+                    date_div = article.select_one("div.twc-text-bluegray-700")
+                    date = date_div.text.strip() if date_div else ""
 
-                temp_reviews_list.append(review_obj)
+                    title_div = article.select_one(
+                        "div.twc-font-bold.twc-text-bluegray-900"
+                    )
+                    title = title_div.text.strip() if title_div else ""
 
-                if content:
-                    collected_count += 1
+                    has_image = False
+                    img_container = article.select_one(
+                        "div.twc-overflow-x-auto.twc-scrollbar-hidden"
+                    )
+                    if img_container and img_container.select_one("img"):
+                        has_image = True
 
-            except:
-                continue
+                    review_obj = {
+                        "id": len(all_reviews_list) + 1,
+                        "filter_score": target_score,
+                        "real_score": rating,
+                        "date": date,
+                        "has_image": has_image,
+                        "title": title,
+                        "content": content,
+                        "full_text": f"{title} {content}",
+                    }
 
-        # print(
-        #     f"   -> {current_page_num}페이지 탐색 중... (유효: {collected_count}/{target_review_count}, 전체수집: {len(temp_reviews_list)})"
-        # )
+                    all_reviews_list.append(review_obj)
 
-        if collected_count >= target_review_count:
-            break
+                    if content:
+                        star_collected_count += 1
+                        total_text_collected += 1
 
-        # 2. 페이지 이동 로직
-        if current_page_num % 10 == 0:
-            # print(
-            #     f"   -> 페이지 블록 이동 중... ({current_page_num} -> {current_page_num + 1})"
-            # )
-            try:
-                next_arrow_btn = WebDriverWait(driver, 5).until(
-                    EC.element_to_be_clickable(
-                        (
-                            By.XPATH,
-                            "//div[contains(@class, 'twc-mt-[24px]') and contains(@class, 'twc-flex-wrap')]//button[last()]",
+                except:
+                    continue
+
+            # 페이지 이동 로직
+            if current_page_num % 10 == 0:
+                try:
+                    next_arrow_btn = WebDriverWait(driver, 5).until(
+                        EC.element_to_be_clickable(
+                            (
+                                By.XPATH,
+                                "//div[contains(@class, 'twc-mt-[24px]') and contains(@class, 'twc-flex-wrap')]//button[last()]",
+                            )
                         )
                     )
-                )
-                driver.execute_script(
-                    "arguments[0].scrollIntoView({block: 'center'});",
-                    next_arrow_btn,
-                )
-                driver.execute_script("arguments[0].click();", next_arrow_btn)
-                time.sleep(random.uniform(0.4, 0.5))
+                    driver.execute_script(
+                        "arguments[0].scrollIntoView({block: 'center'});",
+                        next_arrow_btn,
+                    )
+                    driver.execute_script("arguments[0].click();", next_arrow_btn)
+                    time.sleep(random.uniform(0.5, 1.0))
 
-                next_page_number = current_page_num + 1
-                next_block_first_btn = WebDriverWait(driver, 5).until(
-                    EC.element_to_be_clickable(
-                        (
-                            By.XPATH,
-                            f"//button[.//span[text()='{next_page_number}']]",
+                    next_page_number = current_page_num + 1
+                    next_block_first_btn = WebDriverWait(driver, 5).until(
+                        EC.element_to_be_clickable(
+                            (
+                                By.XPATH,
+                                f"//button[.//span[text()='{next_page_number}']]",
+                            )
                         )
                     )
-                )
-                driver.execute_script("arguments[0].click();", next_block_first_btn)
-                time.sleep(random.uniform(0.25, 0.3))
+                    driver.execute_script("arguments[0].click();", next_block_first_btn)
+                    time.sleep(random.uniform(1.0, 1.5))
 
-                current_page_num = next_page_number
-                continue
-            except:
-                print("   -> 다음 페이지(화살표 또는 새 블록)가 없습니다.")
-                break
-
-        else:
-            next_num = current_page_num + 1
-            try:
-                next_btn = WebDriverWait(driver, 5).until(
-                    EC.element_to_be_clickable(
-                        (By.XPATH, f"//button[.//span[text()='{next_num}']]")
+                    current_page_num = next_page_number
+                    continue
+                except:
+                    print(
+                        "     -> 다음 페이지 블록(화살표)이 없습니다. (해당 별점 종료)"
                     )
-                )
-                driver.execute_script(
-                    "arguments[0].scrollIntoView({block: 'center'});", next_btn
-                )
-                driver.execute_script("arguments[0].click();", next_btn)
-                time.sleep(random.uniform(0.25, 0.3))
-                current_page_num += 1
-            except:
-                print("   -> 다음 페이지 번호가 없습니다.")
-                break
+                    break
+            else:
+                next_num = current_page_num + 1
+                try:
+                    next_btn = WebDriverWait(driver, 5).until(
+                        EC.element_to_be_clickable(
+                            (By.XPATH, f"//button[.//span[text()='{next_num}']]")
+                        )
+                    )
+                    driver.execute_script(
+                        "arguments[0].scrollIntoView({block: 'center'});", next_btn
+                    )
+                    driver.execute_script("arguments[0].click();", next_btn)
+                    time.sleep(random.uniform(1.0, 1.5))
+                    current_page_num += 1
+                except:
+                    print(f"     -> 마지막 페이지 도달 ({current_page_num}페이지).")
+                    break
 
     result_data["reviews"] = {
-        "total_count": len(temp_reviews_list),
-        "text_count": collected_count,
-        "data": temp_reviews_list,
+        "total_count": len(all_reviews_list),
+        "text_count": total_text_collected,
+        "data": all_reviews_list,
     }
 
     return result_data
