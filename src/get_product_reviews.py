@@ -105,6 +105,8 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
                 delivery_type = "로켓배송(파트너사)"
             elif "badge_199559e56f7" in src:
                 delivery_type = "판매자 로켓"
+            elif "global_b" in src:
+                delivery_type = "로켓 직구"
     except:
         pass
 
