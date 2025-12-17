@@ -135,20 +135,8 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
         print("   -> 리뷰 섹션을 찾을 수 없습니다. (리뷰 없음 추정)")
         return result_data
 
-    # 최신순 정렬 (기본 설정)
-    try:
-        sort_btn = WebDriverWait(driver, 5).until(
-            EC.element_to_be_clickable(
-                (By.XPATH, "//button[contains(text(), '최신순')]")
-            )
-        )
-        driver.execute_script("arguments[0].click();", sort_btn)
-        time.sleep(2)
-    except:
-        pass
-
     # -------------------------------------------------------
-    # ★ [핵심] 별점별 순회 수집 로직 적용 (Test Script 로직 반영)
+    # ★ [핵심] 별점별 순회 수집 로직 적용 (각 별점당 target_review_count개씩)
     # -------------------------------------------------------
 
     STAR_RATINGS = [
@@ -163,14 +151,12 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
     total_text_collected = 0
 
     for star_info in STAR_RATINGS:
-        if total_text_collected >= target_review_count:
-            print("   -> 전체 목표 수량을 달성하여 수집을 종료합니다.")
-            break
-
         target_score = star_info["score"]
         target_text = star_info["text"]
 
-        print(f"\n   >>> [별점 변경] '{target_text}' 리뷰 수집 시작")
+        print(
+            f"\n   >>> [별점 변경] '{target_text}' 리뷰 수집 시작 (목표: {target_review_count}개)"
+        )
 
         # 1. 별점 드롭다운 열기 (Test Script의 XPath 사용)
         try:
@@ -225,23 +211,25 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
         # [페이지네이션] 해당 별점 내에서 페이지 넘기며 수집
         # ---------------------------------------------------
         current_page_num = 1
-        star_collected_count = 0
-        STAR_LIMIT = target_review_count
+        star_collected_count = (
+            0  # 이 별점에서 수집한 전체 리뷰 개수 (내용 유무 상관없이)
+        )
+        star_text_count = 0  # 이 별점에서 수집한 텍스트 리뷰 개수
+        STAR_LIMIT = target_review_count  # 각 별점당 목표 개수
 
         while star_collected_count < STAR_LIMIT:
-            if total_text_collected >= target_review_count:
-                break
-
             # 리뷰 파싱
             curr_soup = BeautifulSoup(driver.page_source, "html.parser")
             review_articles = curr_soup.select("article.twc-border-bluegray-200")
 
             if not review_articles:
-                print(f"     -> 더 이상 표시할 리뷰가 없습니다.")
+                print(
+                    f"     -> 더 이상 표시할 리뷰가 없습니다. ('{target_text}' 수집: {star_collected_count}개)"
+                )
                 break
 
             for article in review_articles:
-                if total_text_collected >= target_review_count:
+                if star_collected_count >= STAR_LIMIT:
                     break
 
                 try:
@@ -282,13 +270,21 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
                     }
 
                     all_reviews_list.append(review_obj)
+                    star_collected_count += 1  # 전체 리뷰 개수 증가
 
                     if content:
-                        star_collected_count += 1
+                        star_text_count += 1
                         total_text_collected += 1
 
                 except:
                     continue
+
+            # 이 별점의 목표량을 달성했으면 다음 별점으로
+            if star_collected_count >= STAR_LIMIT:
+                print(
+                    f"     -> '{target_text}' 별점 목표 달성 ({star_collected_count}개)"
+                )
+                break
 
             # 페이지 이동 로직
             if current_page_num % 10 == 0:
@@ -324,7 +320,7 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
                     continue
                 except:
                     print(
-                        "     -> 다음 페이지 블록(화살표)이 없습니다. (해당 별점 종료)"
+                        f"     -> 다음 페이지 블록(화살표)이 없습니다. ('{target_text}' 수집: {star_collected_count}개)"
                     )
                     break
             else:
@@ -342,7 +338,9 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
                     time.sleep(random.uniform(1.0, 1.5))
                     current_page_num += 1
                 except:
-                    print(f"     -> 마지막 페이지 도달 ({current_page_num}페이지).")
+                    print(
+                        f"     -> 마지막 페이지 도달 ({current_page_num}페이지, '{target_text}' 수집: {star_collected_count}개)"
+                    )
                     break
 
     result_data["reviews"] = {
