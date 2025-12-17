@@ -9,20 +9,41 @@ from selenium.common.exceptions import (
 )
 import gc
 
-from get_product_urls import get_product_urls
+from get_product_urls import get_product_urls, get_category_product_urls
 from get_product_reviews import get_product_reviews
 
 
 def main():
     start_time = time.time()
-    KEYWORDS = ["마스카라", "아이섀도우"]
+
+    # [방법 1] 키워드 검색을 원할 때
+    # MODE = "KEYWORD"
+    # TARGETS = ["사과"]
+
+    # [방법 2] 카테고리 수집을 원할 때
+    MODE = "CATEGORY"
+    TARGETS = {"스킨": "486248", "로션": "486249"}
+
     PRODUCT_LIMIT = 2
     REVIEW_TARGET = 10
 
     print(">>> 전체 작업을 시작합니다...")
 
     try:
-        for k_idx, keyword in enumerate(KEYWORDS):
+        # 반복문 시작 부분 수정
+        if MODE == "KEYWORD":
+            iterable = enumerate(TARGETS)
+        else:
+            iterable = enumerate(TARGETS.items())  # (0, ("스킨케어", "486248"))
+
+        for k_idx, item in iterable:
+            # 모드에 따라 변수 할당
+            if MODE == "KEYWORD":
+                search_key = item  # "사과"
+                search_id = None
+            else:
+                search_key = item[0]  # "스킨케어"
+                search_id = item[1]  # "486248"
             crawled_data_list = []
             keyword_total_collected = 0
             keyword_total_text = 0
@@ -30,8 +51,9 @@ def main():
             # ---------------------------------------------------------
             # [단계 1] URL 수집
             # ---------------------------------------------------------
+            total_count = len(TARGETS) if MODE == "KEYWORD" else len(TARGETS.items())
             print(f"\n{'='*50}")
-            print(f">>> [{k_idx+1}/{len(KEYWORDS)}] '{keyword}' URL 수집 시작")
+            print(f">>> [{k_idx+1}/{total_count}] '{search_key}' URL 수집 시작")
             print(f"{'='*50}")
 
             options = uc.ChromeOptions()
@@ -43,11 +65,21 @@ def main():
 
             driver = uc.Chrome(options=options, use_subprocess=False)
             try:
-                urls = get_product_urls(driver, keyword, max_products=PRODUCT_LIMIT)
-                print(f">>> [{keyword}] URL {len(urls)}개 확보 완료")
+                # 모드에 따라 호출 함수 분기
+                if MODE == "KEYWORD":
+                    urls = get_product_urls(
+                        driver, search_key, max_products=PRODUCT_LIMIT
+                    )
+                else:
+                    # 카테고리 ID로 수집 함수 호출
+                    urls = get_category_product_urls(
+                        driver, search_id, max_products=PRODUCT_LIMIT
+                    )
+
+                print(f">>> [{search_key}] URL {len(urls)}개 확보 완료")
                 # 중복 urls 제거
                 urls = list(set(urls))
-                print(f">>> [{keyword}] 중복 제거 후 URL {len(urls)}개 확보 완료")
+                print(f">>> [{search_key}] 중복 제거 후 URL {len(urls)}개 확보 완료")
                 time.sleep(2)
             except Exception as e:
                 print(f">>> URL 수집 중 에러: {e}")
@@ -57,20 +89,20 @@ def main():
                 driver = driver_cleanup(driver)
 
             if not urls:
-                print(f">>> [{keyword}] 수집된 URL이 없어 넘어갑니다.")
+                print(f">>> [{search_key}] 수집된 URL이 없어 넘어갑니다.")
                 continue
 
             # ---------------------------------------------------------
             # [단계 2] 개별 상품 리뷰 수집 (리뷰 수에 따라 드라이버 재사용/재시작)
             # ---------------------------------------------------------
-            print(f">>> [{keyword}] 상세 리뷰 수집 시작")
+            print(f">>> [{search_key}] 상세 리뷰 수집 시작")
 
             # 첫 상품을 위한 드라이버 생성
             driver = None
             driver_collected_count = 0  # 이번 드라이버 생애주기에서 수집한 리뷰 개수
 
             for idx, url in enumerate(urls):
-                print(f"\n   [{idx+1}/{len(urls)}] 상품 처리 시작... ({keyword})")
+                print(f"\n   [{idx+1}/{len(urls)}] 상품 처리 시작... ({search_key})")
 
                 MAX_RETRIES = 2
                 success = False
@@ -157,32 +189,32 @@ def main():
                 print(f"     -> 다음 상품 대기중...(2초)")
                 time.sleep(2)
 
-            # 키워드 처리 완료 후 드라이버가 남아있으면 종료
+            # 키워드/카테고리 처리 완료 후 드라이버가 남아있으면 종료
             if driver:
-                print(f">>> [{keyword}] 모든 상품 처리 완료 - 드라이버 종료")
+                print(f">>> [{search_key}] 모든 상품 처리 완료 - 드라이버 종료")
                 driver = driver_cleanup(driver)
 
             # ---------------------------------------------------------
-            # [단계 3] 키워드 완료 후 저장
+            # [단계 3] 키워드/카테고리 완료 후 저장
             # ---------------------------------------------------------
             result_json = {
-                "search_name": keyword,
+                "search_name": search_key,
                 "total_collected_reviews": keyword_total_collected,
                 "total_text_reviews": keyword_total_text,
                 "data": crawled_data_list,
             }
 
             if crawled_data_list:
-                filename = f"result_{keyword}.json"
+                filename = f"result_{search_key}.json"
                 with open(filename, "w", encoding="utf-8") as f:
                     json.dump(result_json, f, indent=2, ensure_ascii=False)
-                print(f"\n [{keyword}] 저장 완료: {filename}")
+                print(f"\n [{search_key}] 저장 완료: {filename}")
             else:
-                print(f"\n[{keyword}] 수집된 데이터가 없습니다.")
+                print(f"\n[{search_key}] 수집된 데이터가 없습니다.")
 
-            # 다음 키워드 준비 중 (마지막 키워드가 아닐 때만)
-            if k_idx < len(KEYWORDS) - 1:  # 마지막 키워드가 아닐 때만
-                print(f">>> 다음 키워드 준비 중 (20.0초)...")
+            # 다음 키워드/카테고리 준비 중 (마지막이 아닐 때만)
+            if k_idx < total_count - 1:  # 마지막이 아닐 때만
+                print(f">>> 다음 항목 준비 중 (20.0초)...")
                 time.sleep(20)
 
     except KeyboardInterrupt:
