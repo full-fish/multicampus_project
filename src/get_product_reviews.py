@@ -154,6 +154,15 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
     print(f"   -> 상품ID: {product_id} / 브랜드: {brand_name} / 상품명: {product_name}")
     print(f"   -> 가격: {price}원 / 배송: {delivery_type} / 총리뷰: {total_reviews}")
 
+    if product_name == "Unknown":
+        print(
+            "   -> [접근 거절] 상품명을 가져올 수 없습니다. 드라이버 재시작이 필요합니다."
+        )
+        return {
+            "product_info": {},
+            "reviews": {"total_count": 0, "text_count": 0, "data": []},
+        }
+
     # -------------------------------------------------------
     # [리뷰 섹션 준비]
     # -------------------------------------------------------
@@ -241,7 +250,7 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
                 if match:
                     count_str = match.group(1).replace(",", "")
                     rating_distribution[str(target_score)] = int(count_str)
-                    print(f"   -> {target_text}({target_score}점) 리뷰: {count_str}개")
+                    # print(f"   -> {target_text}({target_score}점) 리뷰: {count_str}개")
                 else:
                     print(
                         f"   -> {target_text} 개수 추출 실패 - 전체 텍스트: '{full_text}'"
@@ -259,9 +268,9 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
         target_score = star_info["score"]
         target_text = star_info["text"]
 
-        print(
-            f"\n   >>> [별점 변경] '{target_text}' 리뷰 수집 시작 (목표: {target_review_count}개)"
-        )
+        # print(
+        #     f"\n   >>> [별점 변경] '{target_text}' 리뷰 수집 시작 (목표: {target_review_count}개)"
+        # )
 
         # 리뷰 섹션 상단으로 스크롤 (드롭다운 버튼이 보이도록)
         try:
@@ -437,9 +446,9 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
 
             # 이 별점의 목표량을 달성했으면 다음 별점으로
             if star_collected_count >= STAR_LIMIT:
-                print(
-                    f"     -> '{target_text}' 별점 목표 달성 ({star_collected_count}개)"
-                )
+                # print(
+                #     f"     -> '{target_text}' 별점 목표 달성 ({star_collected_count}개)"
+                # )
                 break
 
             # 페이지 이동 로직
@@ -470,14 +479,14 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
                         )
                     )
                     driver.execute_script("arguments[0].click();", next_block_first_btn)
-                    time.sleep(random.uniform(0.4, 0.5))
+                    time.sleep(random.uniform(0.35, 0.4))
 
                     current_page_num = next_page_number
                     continue
                 except:
-                    print(
-                        f"     -> 다음 페이지 블록(화살표)이 없습니다. ('{target_text}' 수집: {star_collected_count}개)"
-                    )
+                    # print(
+                    #     f"     -> 다음 페이지 블록(화살표)이 없습니다. ('{target_text}' 수집: {star_collected_count}개)"
+                    # )
                     break
             else:
                 next_num = current_page_num + 1
@@ -491,7 +500,7 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
                         "arguments[0].scrollIntoView({block: 'center'});", next_btn
                     )
                     driver.execute_script("arguments[0].click();", next_btn)
-                    time.sleep(random.uniform(0.4, 0.5))
+                    time.sleep(random.uniform(0.35, 0.4))
                     current_page_num += 1
                 except:
                     print(

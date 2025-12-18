@@ -21,9 +21,9 @@ def main():
     # [방법 2] 카테고리 수집을 원할 때
     MODE = "CATEGORY"
     TARGETS = {"스킨": "486248", "바디케어": "486250"}
-    PRODUCT_LIMIT = 2
-    REVIEW_TARGET = 25
-    MAX_REVIEWS_PER_SEARCH = 10000
+    PRODUCT_LIMIT = 1
+    REVIEW_TARGET = 500
+    MAX_REVIEWS_PER_SEARCH = 50000
 
     print(">>> 전체 작업을 시작합니다...")
 
@@ -60,40 +60,64 @@ def main():
             print(f">>> [{k_idx+1}/{total_count}] '{search_key}' URL 수집 시작")
             print(f"{'='*50}")
 
-            options = uc.ChromeOptions()
-            options.add_argument("--no-first-run")
-            options.add_argument("--no-service-autorun")
-            options.add_argument("--password-store=basic")
-            options.add_argument("--window-size=1920,1080")
-            options.add_argument("--blink-settings=imagesEnabled=false")
+            # URL 수집 재시도 로직
+            URL_COLLECT_MAX_RETRIES = 3
+            urls = []
 
-            driver = uc.Chrome(options=options, use_subprocess=False)
-            try:
-                # 모드에 따라 호출 함수 분기
-                if MODE == "KEYWORD":
-                    urls = get_product_urls(
-                        driver, search_key, max_products=PRODUCT_LIMIT
-                    )
-                else:
-                    # 카테고리 ID로 수집 함수 호출
-                    urls = get_category_product_urls(
-                        driver, search_id, max_products=PRODUCT_LIMIT
-                    )
+            for url_attempt in range(URL_COLLECT_MAX_RETRIES):
+                print(
+                    f"\n>>> URL 수집 시도 [{url_attempt+1}/{URL_COLLECT_MAX_RETRIES}]"
+                )
 
-                print(f">>> [{search_key}] URL {len(urls)}개 확보 완료")
-                # 중복 urls 제거
-                urls = list(set(urls))
-                print(f">>> [{search_key}] 중복 제거 후 URL {len(urls)}개 확보 완료")
-                time.sleep(2)
-            except Exception as e:
-                print(f">>> URL 수집 중 에러: {e}")
-                urls = []
-            finally:
-                print(">>> URL 수집 브라우저 종료 및 메모리 정리 중...")
-                driver = driver_cleanup(driver)
+                options = uc.ChromeOptions()
+                options.add_argument("--no-first-run")
+                options.add_argument("--no-service-autorun")
+                options.add_argument("--password-store=basic")
+                options.add_argument("--window-size=1920,1080")
+                options.add_argument("--blink-settings=imagesEnabled=false")
+
+                driver = uc.Chrome(options=options, use_subprocess=False)
+                try:
+                    # 모드에 따라 호출 함수 분기
+                    if MODE == "KEYWORD":
+                        urls = get_product_urls(
+                            driver, search_key, max_products=PRODUCT_LIMIT
+                        )
+                    else:
+                        # 카테고리 ID로 수집 함수 호출
+                        urls = get_category_product_urls(
+                            driver, search_id, max_products=PRODUCT_LIMIT
+                        )
+
+                    print(f">>> [{search_key}] URL {len(urls)}개 확보 완료")
+                    # 중복 urls 제거
+                    urls = list(set(urls))
+                    print(
+                        f">>> [{search_key}] 중복 제거 후 URL {len(urls)}개 확보 완료"
+                    )
+                    time.sleep(1)
+                    # 성공하면 루프 탈출
+                    if urls:
+                        break
+                    else:
+                        print(f">>> URL 수집 실패 (0개) - 재시도합니다.")
+
+                except Exception as e:
+                    print(f">>> URL 수집 중 에러: {e}")
+                    urls = []
+                finally:
+                    print(">>> URL 수집 브라우저 종료 및 메모리 정리 중...")
+                    driver = driver_cleanup(driver)
+
+                # 마지막 시도가 아니면 대기
+                if url_attempt < URL_COLLECT_MAX_RETRIES - 1 and not urls:
+                    print(">>> 20초 대기 후 재시도...")
+                    time.sleep(20)
 
             if not urls:
-                print(f">>> [{search_key}] 수집된 URL이 없어 넘어갑니다.")
+                print(
+                    f">>> [{search_key}] {URL_COLLECT_MAX_RETRIES}번 시도 후에도 URL을 수집하지 못했습니다. 넘어갑니다."
+                )
                 continue
 
             # ---------------------------------------------------------
@@ -133,7 +157,11 @@ def main():
                             driver, url, idx + 1, target_review_count=REVIEW_TARGET
                         )
 
-                        if data and data.get("product_info"):
+                        if (
+                            data
+                            and data.get("product_info")
+                            and data["product_info"].get("product_id")
+                        ):
                             r_data = data.get("reviews", {})
                             current_collected = r_data.get("total_count", 0)
 
@@ -162,16 +190,16 @@ def main():
                                 f"     -> 키워드 누적: {keyword_total_collected}개 / 드라이버 생애주기: {driver_collected_count}개"
                             )
 
-                            # 드라이버 생애주기에서 4500개 초과면 재시작, 아니면 유지
-                            if driver_collected_count > 4500:
+                            # 드라이버 생애주기에서 4300개 초과면 재시작, 아니면 유지
+                            if driver_collected_count > 4300:
                                 print(
-                                    f"     -> 드라이버 수집 {driver_collected_count}개 > 4500 → 드라이버 재시작"
+                                    f"     -> 드라이버 수집 {driver_collected_count}개 > 4300 → 드라이버 재시작"
                                 )
                                 driver = driver_cleanup(driver)
                                 driver_collected_count = 0  # 카운트 초기화
                             else:
                                 print(
-                                    f"     -> 드라이버 수집 {driver_collected_count}개 ≤ 4500 → 드라이버 유지"
+                                    f"     -> 드라이버 수집 {driver_collected_count}개 ≤ 4300 → 드라이버 유지"
                                 )
 
                             success = True
@@ -213,7 +241,7 @@ def main():
                 if keyword_total_collected >= MAX_REVIEWS_PER_SEARCH:
                     break
 
-                print(f"     -> 다음 상품 대기중...(2초)")
+                # print(f"     -> 다음 상품 대기중...(2초)")
                 time.sleep(2)
 
             # 키워드/카테고리 처리 완료 후 드라이버가 남아있으면 종료
