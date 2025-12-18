@@ -26,7 +26,9 @@ def clean_text(text):
     return text.strip()
 
 
-def get_product_reviews(driver, url, rank_num, target_review_count=100):
+def get_product_reviews(
+    driver, url, rank_num, target_review_count=100, driver_collected_count=0
+):
     # 최종 결과를 담을 구조
     result_data = {
         "product_info": {},
@@ -263,6 +265,33 @@ def get_product_reviews(driver, url, rank_num, target_review_count=100):
 
     except Exception as e:
         print(f"   -> 별점별 개수 추출 실패: {e}")
+
+    # -------------------------------------------------------
+    # 드라이버 생명주기 체크 (수집 시작 전)
+    # -------------------------------------------------------
+    # 각 별점의 예상 수집량 계산
+    total_expected_collection = 0
+    for star_info in STAR_RATINGS:
+        target_score = star_info["score"]
+        actual_count = rating_distribution.get(str(target_score), 0)
+        ten_percent = int(actual_count * 0.1)
+        dynamic_target = max(target_review_count, ten_percent)
+        total_expected_collection += dynamic_target
+
+    # 현재 드라이버 수집량 + 예상 수집량이 5500 초과하면 재시작 필요
+    if driver_collected_count + total_expected_collection > 5500:
+        print(
+            f"   -> [드라이버 한계] 현재: {driver_collected_count}개 + 예상: {total_expected_collection}개 = {driver_collected_count + total_expected_collection}개 > 5500"
+        )
+        print("   -> 드라이버 재시작을 위해 빈 데이터 반환")
+        return {
+            "product_info": {},
+            "reviews": {"total_count": 0, "text_count": 0, "data": []},
+        }
+    else:
+        print(
+            f"   -> [드라이버 체크] 현재: {driver_collected_count}개 + 예상: {total_expected_collection}개 = {driver_collected_count + total_expected_collection}개 ≤ 5500 → 진행"
+        )
 
     for star_info in STAR_RATINGS:
         target_score = star_info["score"]

@@ -127,6 +127,7 @@ def main():
 
             # 첫 상품을 위한 드라이버 생성
             driver = None
+            driver_collected_count = 0  # 현재 드라이버가 수집한 총 리뷰 개수
 
             for idx, url in enumerate(urls):
                 print(f"\n   [{idx+1}/{len(urls)}] 상품 처리 시작... ({search_key})")
@@ -149,10 +150,15 @@ def main():
                             options.add_argument("--window-size=1920,1080")
                             options.add_argument("--blink-settings=imagesEnabled=false")
                             driver = uc.Chrome(options=options, use_subprocess=False)
+                            driver_collected_count = 0
 
-                        # 수집 함수 호출
+                        # 수집 함수 호출 (현재 드라이버 수집량 전달)
                         data = get_product_reviews(
-                            driver, url, idx + 1, target_review_count=REVIEW_TARGET
+                            driver,
+                            url,
+                            idx + 1,
+                            target_review_count=REVIEW_TARGET,
+                            driver_collected_count=driver_collected_count,
                         )
 
                         if (
@@ -165,6 +171,7 @@ def main():
 
                             keyword_total_collected += current_collected
                             keyword_total_text += r_data.get("text_count", 0)
+                            driver_collected_count += current_collected
 
                             # 상품별 rating_distribution을 전체에 합산
                             product_rating = data.get("product_info", {}).get(
@@ -177,7 +184,9 @@ def main():
                             print(
                                 f"     -> [성공] 수집 완료 (전체: {current_collected}개, 글 포함: {r_data.get('text_count', 0)}개)"
                             )
-                            print(f"     -> 키워드 누적: {keyword_total_collected}개")
+                            print(
+                                f"     -> 키워드 누적: {keyword_total_collected}개 / 현 드라이버: {driver_collected_count}개"
+                            )
 
                             success = True
 
@@ -197,12 +206,14 @@ def main():
                             print("     -> [실패] 데이터가 비어있습니다. 재시도합니다.")
                             # 드라이버 재시작
                             driver = driver_cleanup(driver)
+                            driver_collected_count = 0
 
                     except Exception as e:
                         print(f"     -> [에러 발생] {e}")
                         # 에러 발생 시 드라이버 재시작
                         if driver:
                             driver = driver_cleanup(driver)
+                            driver_collected_count = 0
 
                         continue
 
