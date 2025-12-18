@@ -18,11 +18,11 @@ def main():
 
     # [방법 1] 키워드 검색을 원할 때
     # MODE = "KEYWORD"
-    # TARGETS = ["사과"]
+    # TARGETS = ["사과"] 6-890
 
     # [방법 2] 카테고리 수집을 원할 때
     MODE = "CATEGORY"
-    TARGETS = {"메이크업": "567691", "베이스 메이크업": "176587"}
+    TARGETS = {"메이크업": "567691", "아이 메이크업": "176574"}
 
     PRODUCT_LIMIT = 100
     REVIEW_TARGET = 250
