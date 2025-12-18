@@ -22,10 +22,11 @@ def main():
 
     # [방법 2] 카테고리 수집을 원할 때
     MODE = "CATEGORY"
-    TARGETS = {"스킨": "486248", "로션": "486249"}
+    TARGETS = {"메이크업": "567691", "베이스 메이크업": "176587"}
 
-    PRODUCT_LIMIT = 2
-    REVIEW_TARGET = 10
+    PRODUCT_LIMIT = 100
+    REVIEW_TARGET = 250
+    MAX_REVIEWS_PER_SEARCH = 10000
 
     print(">>> 전체 작업을 시작합니다...")
 
@@ -102,6 +103,8 @@ def main():
             driver_collected_count = 0  # 이번 드라이버 생애주기에서 수집한 리뷰 개수
 
             for idx, url in enumerate(urls):
+                if keyword_total_collected >= MAX_REVIEWS_PER_SEARCH:
+                    break
                 print(f"\n   [{idx+1}/{len(urls)}] 상품 처리 시작... ({search_key})")
 
                 MAX_RETRIES = 2
