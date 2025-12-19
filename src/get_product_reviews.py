@@ -153,6 +153,29 @@ def get_product_reviews(
     except:
         pass
 
+    # -------------------------------------------------------
+    # [브랜드 본사 정품 체크 - 수집 제외]
+    # -------------------------------------------------------
+    try:
+        brand_official_div = soup.select_one(
+            "div.twc-flex.twc-items-center.twc-justify-center.twc-text-\\[14px\\]\\/\\[17px\\].twc-text-\\[\\#FFF\\].twc-font-\\[600\\].twc-bg-bluegray-1000.twc-h-\\[32px\\].twc-p-\\[0_16px\\].twc-mb-\\[32px\\].max-md\\:twc-m-\\[0_-16px_32px\\]"
+        )
+        if brand_official_div:
+            brand_official_span = brand_official_div.select_one("span.twc-ml-\\[3px\\]")
+            if brand_official_span:
+                brand_official_text = clean_text(brand_official_span.text.strip())
+                if brand_official_text == "로켓배송 · 브랜드 본사 정품":
+                    print(
+                        "   -> [수집 제외] 브랜드 본사 정품 상품입니다. 수집을 건너뜁니다."
+                    )
+                    return {
+                        "skip_official_product": True,
+                        "product_info": {},
+                        "reviews": {"total_count": 0, "text_count": 0, "data": []},
+                    }
+    except:
+        pass
+
     print(f"   -> 상품ID: {product_id} / 브랜드: {brand_name} / 상품명: {product_name}")
     print(f"   -> 가격: {price}원 / 배송: {delivery_type} / 총리뷰: {total_reviews}")
 
@@ -538,7 +561,7 @@ def get_product_reviews(
                         )
                     )
                     driver.execute_script("arguments[0].click();", next_block_first_btn)
-                    time.sleep(random.uniform(0.32, 0.35))
+                    time.sleep(random.uniform(0.25, 0.27))
 
                     current_page_num = next_page_number
                     continue
@@ -559,7 +582,7 @@ def get_product_reviews(
                         "arguments[0].scrollIntoView({block: 'center'});", next_btn
                     )
                     driver.execute_script("arguments[0].click();", next_btn)
-                    time.sleep(random.uniform(0.32, 0.35))
+                    time.sleep(random.uniform(0.25, 0.27))
                     current_page_num += 1
                 except:
                     # print(

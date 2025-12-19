@@ -21,7 +21,7 @@ def main():
 
     # [방법 2] 카테고리 수집을 원할 때
     MODE = "CATEGORY"
-    TARGETS = {"로션": "486249"}
+    TARGETS = {"미스트": "486251"}
     PRODUCT_LIMIT = 200
     REVIEW_TARGET = 200
     MAX_REVIEWS_PER_SEARCH = 50000
@@ -239,6 +239,14 @@ def main():
                             target_review_count=REVIEW_TARGET,
                             driver_collected_count=driver_collected_count,
                         )
+
+                        # 브랜드 본사 정품 상품인 경우 드라이버 재시작 없이 스킵
+                        if data and data.get("skip_official_product"):
+                            print(
+                                "     -> [브랜드 본사 정품] 드라이버 재시작 없이 다음 상품으로 넘어갑니다."
+                            )
+                            success = True
+                            break
 
                         if (
                             data
