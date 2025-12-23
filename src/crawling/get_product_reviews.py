@@ -548,7 +548,7 @@ def get_product_reviews(
                         next_arrow_btn,
                     )
                     driver.execute_script("arguments[0].click();", next_arrow_btn)
-                    time.sleep(random.uniform(0.7, 1))
+                    time.sleep(random.uniform(0.9, 1))
 
                     next_page_number = current_page_num + 1
                     next_block_first_btn = WebDriverWait(driver, 5).until(
@@ -560,7 +560,7 @@ def get_product_reviews(
                         )
                     )
                     driver.execute_script("arguments[0].click();", next_block_first_btn)
-                    time.sleep(random.uniform(0.7, 1))
+                    time.sleep(random.uniform(0.9, 1))
 
                     current_page_num = next_page_number
                     continue
@@ -581,7 +581,7 @@ def get_product_reviews(
                         "arguments[0].scrollIntoView({block: 'center'});", next_btn
                     )
                     driver.execute_script("arguments[0].click();", next_btn)
-                    time.sleep(random.uniform(0.7, 1))
+                    time.sleep(random.uniform(0.9, 1))
                     current_page_num += 1
                 except:
                     # print(
