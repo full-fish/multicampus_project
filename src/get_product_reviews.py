@@ -49,7 +49,7 @@ def get_product_reviews(
     except:
         pass
 
-    time.sleep(random.uniform(3, 5))
+    time.sleep(random.uniform(6, 10))
 
     # -------------------------------------------------------
     # [기본 정보 파싱]
@@ -207,8 +207,8 @@ def get_product_reviews(
     # -------------------------------------------------------
     # [리뷰 섹션 준비]
     # -------------------------------------------------------
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight * 0.3);")
-    time.sleep(1)
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    time.sleep(random.uniform(2.5, 4.5))
 
     try:
         review_section = WebDriverWait(driver, 10).until(
@@ -255,7 +255,7 @@ def get_product_reviews(
         review_section = driver.find_element(By.ID, "sdpReview")
         driver.execute_script("arguments[0].scrollIntoView(true);", review_section)
         driver.execute_script("window.scrollBy(0, -200);")
-        time.sleep(1)
+        time.sleep(random.uniform(2, 4))
 
         dropdown_trigger = WebDriverWait(driver, 5).until(
             EC.element_to_be_clickable(
