@@ -2,6 +2,7 @@ import json
 from preprocess_format import preprocess_format
 from brand_standardizer import brand_standardizer
 from drop_missing_val_splitter import drop_missing_val_splitter
+from reviews_with_word2vec import reviews_with_word2vec
 
 
 def main():
@@ -76,8 +77,17 @@ def main():
     with_text, without_text = drop_missing_val_splitter(data)
     print("✓ 결측치 제거 및 분할 완료")
 
-    # 5단계: 최종 결과 저장
-    print("\n[5단계] 결과 파일 저장 중...")
+    # 5단계: Word2Vec 및 감성 라벨링 (텍스트 있는 데이터만)
+    print("\n[5단계] Word2Vec 및 감성 라벨링 처리 중...")
+    print("  - 형태소 분석 및 토큰화")
+    print("  - 감성 라벨링 (긍정/부정)")
+    print("  - Word2Vec 벡터 생성")
+
+    with_text = reviews_with_word2vec(with_text)
+    print("✓ Word2Vec 및 감성 라벨링 완료")
+
+    # 6단계: 최종 결과 저장
+    print("\n[6단계] 결과 파일 저장 중...")
 
     with open(OUTPUT_WITH_TEXT, "w", encoding="utf-8") as f:
         json.dump(with_text, f, ensure_ascii=False, indent=2)

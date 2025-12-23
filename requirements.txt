@@ -1,0 +1,14 @@
+# 웹 크롤링 라이브러리
+selenium
+undetected-chromedriver
+beautifulsoup4
+
+# 자연어 처리 라이브러리
+konlpy
+gensim
+
+# 데이터 처리 라이브러리
+numpy
+
+# 유틸리티
+tqdm

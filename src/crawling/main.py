@@ -128,7 +128,7 @@ def main():
                 0  # 연속 실패 카운터 (URL 실패 + 리뷰 수집 실패 통합)
             )
             CONSECUTIVE_FAIL_LIMIT = 10  # 연속 실패 허용 횟수
-            WAIT_TIME_ON_CONSECUTIVE_FAIL = 15 * 60  # 15분 (초 단위)
+            WAIT_TIME_ON_CONSECUTIVE_FAIL = 20 * 60  # 20분 (초 단위)
 
             for url_attempt in range(URL_COLLECT_MAX_RETRIES):
                 print(
