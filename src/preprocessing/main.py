@@ -138,6 +138,9 @@ def main():
 
     print(f"\n총 {len(json_files)}개 파일 발견")
 
+    skipped_count = 0
+    processed_count = 0
+
     for idx, input_path in enumerate(json_files, 1):
         print(f"\n\n{'='*60}")
         print(f"[{idx}/{len(json_files)}] 처리 중")
@@ -150,9 +153,31 @@ def main():
         # 출력 디렉토리 경로 생성
         output_dir = os.path.join(PROCESSED_DATA_DIR, rel_dir)
 
+        # 출력 파일명 계산
+        file_name = os.path.basename(input_path)
+        base_name = os.path.splitext(file_name)[0]
+        if base_name.startswith("result_"):
+            base_name = base_name[7:]
+
+        output_with_text = os.path.join(
+            output_dir, f"processed_{base_name}_with_text.json"
+        )
+        output_without_text = os.path.join(
+            output_dir, f"processed_{base_name}_without_text.json"
+        )
+
+        # 이미 처리된 파일인지 확인
+        if os.path.exists(output_with_text) and os.path.exists(output_without_text):
+            print(f"⏭️  이미 처리된 파일입니다. 건너뜁니다.")
+            print(f"   - {output_with_text}")
+            print(f"   - {output_without_text}")
+            skipped_count += 1
+            continue
+
         # 파일 처리
         try:
             process_single_file(input_path, output_dir)
+            processed_count += 1
         except Exception as e:
             print(f"\n✗ 에러 발생: {e}")
             print(f"   파일: {input_path}")
@@ -160,6 +185,8 @@ def main():
 
     print("\n\n" + "=" * 60)
     print("전체 전처리 파이프라인 완료!")
+    print(f"  - 처리된 파일: {processed_count}개")
+    print(f"  - 건너뛴 파일: {skipped_count}개")
     print("=" * 60)
 
 
