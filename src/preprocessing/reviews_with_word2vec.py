@@ -84,6 +84,7 @@ def train_word2vec(tokenized_texts, vector_size=100, window=5, min_count=3):
         window=window,
         min_count=min_count,
         workers=4,
+        sg=1,  # 1은 Skip-gram, 0은 CBOW. 기본은 0인데 skip-gram이 성능이 더 좋음
     )
     return model
 

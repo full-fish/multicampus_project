@@ -59,6 +59,10 @@ def drop_missing_val_splitter(data: dict) -> tuple:
     init_metadata(with_text)
     init_metadata(without_text)
 
+    if "search_name" in data:
+        with_text["search_name"] = data["search_name"]
+        without_text["search_name"] = data["search_name"]
+
     # 분리된 데이터별로 별점 분포를 다시 계산하기 위한 카운터
     rating_with = Counter()
     rating_without = Counter()

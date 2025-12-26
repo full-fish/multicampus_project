@@ -133,12 +133,12 @@ NOISE_PATTERNS = [
 ]
 
 
-def clean_product_name(name: str, brand_norm: str, brand_patterns: dict) -> str:
+def clean_product_name(name: str, brand_normal: str, brand_patterns: dict) -> str:
     """소문자 변환, 노이즈 패턴 제거, 브랜드명 삭제, 동의어 처리를 순차적으로 수행함"""
     name = to_lower(name)
     for pattern in NOISE_PATTERNS:
         name = re.sub(pattern, " ", name)
-    name = remove_brand_from_name(name, brand_norm, brand_patterns)
+    name = remove_brand_from_name(name, brand_normal, brand_patterns)
     name = normalize_synonyms(name)
     return re.sub(r"\s+", " ", name).strip()
 
@@ -188,15 +188,15 @@ def preprocess_product_info(product_info: Dict, brand_patterns: dict) -> Dict:
     product_info = product_info.copy()
 
     # 브랜드 표준화 (원본 필드에 덮어씌움)
-    brand_norm = normalize_brand(product_info.get("brand"))
-    product_info["brand"] = brand_norm
+    brand_normal = normalize_brand(product_info.get("brand"))
+    product_info["brand"] = brand_normal
     product_info["category_norm"] = normalize_category(
         product_info.get("category_path")
     )
 
     # 상품명 정제 및 토큰 추출
     product_info["product_name_clean"] = clean_product_name(
-        product_info.get("product_name"), brand_norm, brand_patterns
+        product_info.get("product_name"), brand_normal, brand_patterns
     )
     tokens = tokenize(product_info["product_name_clean"])
     product_info["product_tokens"] = normalize_tokens(tokens)

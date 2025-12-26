@@ -1,193 +1,225 @@
+"""
+전처리 파이프라인 메인 orchestrator
+"""
 import json
 import os
 import glob
-from pathlib import Path
-from preprocess_format import preprocess_format
-from brand_standardizer import brand_standardizer
-from drop_missing_val_splitter import drop_missing_val_splitter
-from reviews_with_word2vec import reviews_with_word2vec
+import time
+from datetime import datetime
+import pandas as pd
+from multiprocessing import Pool, cpu_count
+from tqdm import tqdm
+from preprocessing_phases import (
+    preprocess_and_tokenize_file,
+    train_global_word2vec,
+    vectorize_file,
+    MAX_WORKERS,
+)
 
-
-def process_single_file(input_path, output_dir):
-    """
-    단일 파일을 전처리하고 결과를 저장합니다.
-
-    Args:
-        input_path: 입력 JSON 파일 경로
-        output_dir: 출력 디렉토리 경로
-    """
-    file_name = os.path.basename(input_path)
-    print("\n" + "=" * 60)
-    print(f"파일 처리 중: {file_name}")
-    print("=" * 60)
-
-    print("\n" + "=" * 60)
-    print(f"파일 처리 중: {file_name}")
-    print("=" * 60)
-
-    # 1단계: JSON 파일 로드
-    print(f"\n[1단계] JSON 파일 로드 중: {file_name}")
-    try:
-        with open(input_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        print(f"✓ 파일 로드 완료 - 상품 수: {len(data.get('data', []))}개")
-    except FileNotFoundError:
-        print(f"✗ 에러: {input_path} 파일을 찾을 수 없습니다.")
-        return
-    except json.JSONDecodeError:
-        print(f"✗ 에러: {input_path}이 올바른 JSON 형식이 아닙니다.")
-        return
-
-    # 2단계: 데이터 포맷 전처리
-    print("\n[2단계] 데이터 포맷 전처리 중...")
-    print("  - 날짜/시간 형식 변환")
-    print("  - 정수형 변환 (id, score, price 등)")
-    print("  - 텍스트 정규화 (이모지 제거, 자모음 반복 축소)")
-    print("  - 중복 리뷰 제거")
-
-    # 임시 파일에 저장하고 preprocess_format 호출
-    temp_file = "temp_input.json"
-    with open(temp_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-    data = preprocess_format(temp_file)
-
-    # 임시 파일 삭제
-    if os.path.exists(temp_file):
-        os.remove(temp_file)
-
-    print(
-        f"✓ 포맷 전처리 완료 - 상품 수: {data.get('total_product', 0)}개, 리뷰 수: {data.get('total_collected_reviews', 0)}개"
-    )
-
-    # 3단계: 브랜드 표준화
-    print("\n[3단계] 브랜드 및 상품명 표준화 중...")
-    print("  - 브랜드명 통일")
-    print("  - 카테고리 표준화")
-    print("  - 상품명 정제 (노이즈 제거)")
-    print("  - 상품 토큰 생성")
-
-    data = brand_standardizer(data)
-    print("✓ 브랜드 표준화 완료")
-
-    # 4단계: 결측치 제거 및 파일 분할
-    print("\n[4단계] 결측치 제거 및 파일 분할 중...")
-    print("  - 빈 필드 제거 (helpful_count=0, has_image=False, 빈 문자열)")
-    print("  - 텍스트 있는 리뷰 / 없는 리뷰 분리")
-
-    with_text, without_text = drop_missing_val_splitter(data)
-    print("✓ 결측치 제거 및 분할 완료")
-
-    # 5단계: Word2Vec 및 감성 라벨링 (텍스트 있는 데이터만)
-    print("\n[5단계] Word2Vec 및 감성 라벨링 처리 중...")
-    print("  - 형태소 분석 및 토큰화")
-    print("  - 감성 라벨링 (긍정/부정)")
-    print("  - Word2Vec 벡터 생성")
-
-    with_text = reviews_with_word2vec(with_text)
-    print("✓ Word2Vec 및 감성 라벨링 완료")
-
-    # 6단계: 최종 결과 저장
-    print("\n[6단계] 결과 파일 저장 중...")
-
-    # 출력 디렉토리 생성
-    os.makedirs(output_dir, exist_ok=True)
-
-    # 파일명 변환: result_오일.json -> processed_오일_with_text.json
-    base_name = os.path.splitext(file_name)[0]  # result_오일
-    if base_name.startswith("result_"):
-        base_name = base_name[7:]  # "result_" 제거 -> 오일
-
-    output_with_text = os.path.join(output_dir, f"processed_{base_name}_with_text.json")
-    output_without_text = os.path.join(
-        output_dir, f"processed_{base_name}_without_text.json"
-    )
-
-    with open(output_with_text, "w", encoding="utf-8") as f:
-        json.dump(with_text, f, ensure_ascii=False, indent=2)
-    print(f"✓ 텍스트 포함 파일 저장 완료: {output_with_text}")
-    print(f"  - 상품 수: {with_text['total_product']}개")
-    print(f"  - 리뷰 수: {with_text['total_collected_reviews']}개")
-
-    with open(output_without_text, "w", encoding="utf-8") as f:
-        json.dump(without_text, f, ensure_ascii=False, indent=2)
-    print(f"✓ 텍스트 미포함 파일 저장 완료: {output_without_text}")
-    print(f"  - 상품 수: {without_text['total_product']}개")
-    print(f"  - 리뷰 수: {without_text['total_collected_reviews']}개")
+# 임시 토큰 저장 디렉토리
+TEMP_TOKENS_DIR = "./data/temp_tokens"
 
 
 def main():
     """
-    ./data/pre_data 내 모든 JSON 파일을 순회하며 전처리 파이프라인을 실행합니다.
-    결과는 ./data/processed_data에 동일한 폴더 구조로 저장됩니다.
+    최적화된 전처리 파이프라인:
+    Phase 1: 병렬 전처리 + 토큰화 (1회만)
+    Phase 2: Iterator 방식 Word2Vec 학습 (메모리 효율적)
+    Phase 3: 병렬 벡터화 + 대표 리뷰 선정
     """
-    # 기본 경로 설정
+    # 시작 시간 기록
+    start_time = time.time()
+    start_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     PRE_DATA_DIR = "./data/pre_data"
     PROCESSED_DATA_DIR = "./data/processed_data"
+    PRODUCT_PARQUET = "./data/processed_data/integrated_products_vector.parquet"
+    REVIEW_PARQUET = "./data/processed_data/integrated_reviews_detail.parquet"
 
-    print("=" * 60)
-    print("전체 전처리 파이프라인 시작")
-    print("=" * 60)
+    print("\n" + "=" * 60)
+    print(f"{'최적화된 전처리 파이프라인 시작':^60}")
+    print(f"{'시작 시간: ' + start_datetime:^60}")
+    print("=" * 60 + "\n")
 
     # pre_data 디렉토리의 모든 JSON 파일 찾기
     json_files = glob.glob(os.path.join(PRE_DATA_DIR, "**", "*.json"), recursive=True)
 
     if not json_files:
-        print(f"\n✗ {PRE_DATA_DIR} 디렉토리에서 JSON 파일을 찾을 수 없습니다.")
+        print(f"\n[오류] {PRE_DATA_DIR} 디렉토리에서 JSON 파일을 찾을 수 없습니다.")
         return
 
-    print(f"\n총 {len(json_files)}개 파일 발견")
+    print(f"총 {len(json_files)}개 파일 발견")
+    print(f"병렬 처리 워커 수: {MAX_WORKERS}개\n")
+
+    # ========== Phase 1: 병렬 전처리 + 토큰화 ==========
+    print("=" * 60)
+    print("Phase 1: 전처리 및 토큰화 (병렬 처리)")
+    print("=" * 60)
+
+    phase1_start = time.time()
+
+    # 임시 디렉토리 생성
+    os.makedirs(TEMP_TOKENS_DIR, exist_ok=True)
+
+    # 병렬로 전처리 + 토큰화 실행
+    args_list = [
+        (input_path, PRE_DATA_DIR, PROCESSED_DATA_DIR, TEMP_TOKENS_DIR)
+        for input_path in json_files
+    ]
 
     skipped_count = 0
-    processed_count = 0
+    phase1_results = []
 
-    for idx, input_path in enumerate(json_files, 1):
-        print(f"\n\n{'='*60}")
-        print(f"[{idx}/{len(json_files)}] 처리 중")
-        print(f"{'='*60}")
+    with Pool(MAX_WORKERS) as pool:
+        for result in tqdm(
+            pool.imap_unordered(preprocess_and_tokenize_file, args_list),
+            total=len(json_files),
+            desc="전처리 및 토큰화",
+            unit="파일",
+        ):
+            if result["status"] == "skipped":
+                skipped_count += 1
+                tqdm.write(f"  [건너뜀] {result['file']}")
+            elif result["status"] == "success":
+                phase1_results.append(result)
+                tqdm.write(
+                    f"  [완료] {result['file']} - 토큰: {result['token_count']:,}개"
+                )
+            else:
+                tqdm.write(
+                    f"  [에러] {result['file']} - {result.get('error', 'Unknown')}"
+                )
 
-        # 상대 경로 계산 (pre_data 기준)
-        rel_path = os.path.relpath(input_path, PRE_DATA_DIR)
-        rel_dir = os.path.dirname(rel_path)
+    phase1_time = time.time() - phase1_start
+    print(f"\nPhase 1 완료 - 소요 시간: {phase1_time:.2f}초")
+    print(f"  처리 완료: {len(phase1_results)}개")
+    print(f"  건너뜀: {skipped_count}개\n")
 
-        # 출력 디렉토리 경로 생성
-        output_dir = os.path.join(PROCESSED_DATA_DIR, rel_dir)
+    # ========== Phase 2: Word2Vec 학습 ==========
+    phase2_start = time.time()
+    w2v_model = train_global_word2vec(TEMP_TOKENS_DIR)
+    phase2_time = time.time() - phase2_start
+    print(f"Phase 2 완료 - 소요 시간: {phase2_time:.2f}초\n")
 
-        # 출력 파일명 계산
-        file_name = os.path.basename(input_path)
-        base_name = os.path.splitext(file_name)[0]
-        if base_name.startswith("result_"):
-            base_name = base_name[7:]
+    if not w2v_model:
+        print("[오류] Word2Vec 모델 학습 실패")
+        return
 
-        output_with_text = os.path.join(
-            output_dir, f"processed_{base_name}_with_text.json"
-        )
-        output_without_text = os.path.join(
-            output_dir, f"processed_{base_name}_without_text.json"
-        )
-
-        # 이미 처리된 파일인지 확인
-        if os.path.exists(output_with_text) and os.path.exists(output_without_text):
-            print(f"⏭️  이미 처리된 파일입니다. 건너뜁니다.")
-            print(f"   - {output_with_text}")
-            print(f"   - {output_without_text}")
-            skipped_count += 1
-            continue
-
-        # 파일 처리
-        try:
-            process_single_file(input_path, output_dir)
-            processed_count += 1
-        except Exception as e:
-            print(f"\n✗ 에러 발생: {e}")
-            print(f"   파일: {input_path}")
-            continue
-
-    print("\n\n" + "=" * 60)
-    print("전체 전처리 파이프라인 완료!")
-    print(f"  - 처리된 파일: {processed_count}개")
-    print(f"  - 건너뛴 파일: {skipped_count}개")
+    # ========== Phase 3: 병렬 벡터화 + 대표 리뷰 선정 ==========
     print("=" * 60)
+    print("Phase 3: 벡터화 및 대표 리뷰 선정 (병렬 처리)")
+    print("=" * 60)
+
+    phase3_start = time.time()
+
+    # Phase 1에서 처리된 파일들에 대해 벡터화 실행
+    vectorize_args = [
+        (result["base_name"], TEMP_TOKENS_DIR, result["output_dir"], w2v_model)
+        for result in phase1_results
+    ]
+
+    all_products = []
+    all_reviews = []
+
+    with Pool(MAX_WORKERS) as pool:
+        for result in tqdm(
+            pool.imap_unordered(vectorize_file, vectorize_args),
+            total=len(vectorize_args),
+            desc="벡터화 및 대표 리뷰 선정",
+            unit="파일",
+        ):
+            if result["status"] == "success":
+                all_products.extend(result["product_summaries"])
+                all_reviews.extend(result["review_details"])
+                tqdm.write(f"  [완료] {result['file']}")
+            else:
+                tqdm.write(
+                    f"  [에러] {result['file']} - {result.get('error', 'Unknown')}"
+                )
+
+    # 건너뛴 파일의 상품 정보도 로드
+    if skipped_count > 0:
+        print(f"\n건너뛴 파일 {skipped_count}개의 데이터 로드 중...")
+        for input_path in json_files:
+            rel_path = os.path.relpath(input_path, PRE_DATA_DIR)
+            rel_dir = os.path.dirname(rel_path)
+            output_dir = os.path.join(PROCESSED_DATA_DIR, rel_dir)
+
+            file_name = os.path.basename(input_path)
+            base_name = os.path.splitext(file_name)[0]
+            if base_name.startswith("result_"):
+                base_name = base_name[7:]
+
+            processed_file = os.path.join(
+                output_dir, f"processed_{base_name}_with_text.json"
+            )
+
+            if os.path.exists(processed_file):
+                try:
+                    with open(processed_file, "r", encoding="utf-8") as f:
+                        existing_data = json.load(f)
+                    all_products.extend(existing_data.get("data", []))
+                except:
+                    pass
+
+    phase3_time = time.time() - phase3_start
+    print(f"\nPhase 3 완료 - 소요 시간: {phase3_time:.2f}초\n")
+
+    # ========== Parquet 파일 생성 ==========
+    print("=" * 60)
+    print("Parquet 파일 생성 중...")
+    print("=" * 60)
+
+    # 1. 상품 벡터 Parquet (요약 정보)
+    if all_products:
+        df_products = pd.DataFrame(all_products)
+        df_products.to_parquet(
+            PRODUCT_PARQUET, engine="pyarrow", compression="snappy", index=False
+        )
+
+        product_size_mb = os.path.getsize(PRODUCT_PARQUET) / 1024 / 1024
+        print(f"✓ 상품 Parquet 저장: {PRODUCT_PARQUET}")
+        print(f"  - 상품 수: {len(df_products):,}개")
+        print(f"  - 파일 크기: {product_size_mb:.2f} MB\n")
+
+    # 2. 리뷰 상세 Parquet (토큰, 벡터 포함)
+    if all_reviews:
+        df_reviews = pd.DataFrame(all_reviews)
+        df_reviews.to_parquet(
+            REVIEW_PARQUET, engine="pyarrow", compression="snappy", index=False
+        )
+
+        review_size_mb = os.path.getsize(REVIEW_PARQUET) / 1024 / 1024
+        print(f"✓ 리뷰 Parquet 저장: {REVIEW_PARQUET}")
+        print(f"  - 리뷰 수: {len(df_reviews):,}개")
+        print(f"  - 파일 크기: {review_size_mb:.2f} MB")
+
+    # ========== 임시 파일 정리 ==========
+    print(f"\n임시 토큰 파일 정리 중...")
+    try:
+        import shutil
+
+        shutil.rmtree(TEMP_TOKENS_DIR)
+        print(f"임시 디렉토리 삭제 완료: {TEMP_TOKENS_DIR}")
+    except Exception as e:
+        print(f"[경고] 임시 디렉토리 삭제 실패: {e}")
+
+    # 종료 시간 및 소요 시간 계산
+    end_time = time.time()
+    end_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    elapsed_time = end_time - start_time
+    hours = int(elapsed_time // 3600)
+    minutes = int((elapsed_time % 3600) // 60)
+    seconds = int(elapsed_time % 60)
+
+    print("\n" + "=" * 60)
+    print(f"{'전체 파이프라인 완료!':^60}")
+    print(f"{'종료 시간: ' + end_datetime:^60}")
+    print(f"{'총 소요 시간: ' + f'{hours}시간 {minutes}분 {seconds}초':^60}")
+    print(
+        f"{'Phase 1: ' + f'{phase1_time:.1f}초 | Phase 2: {phase2_time:.1f}초 | Phase 3: {phase3_time:.1f}초':^60}"
+    )
+    print("=" * 60 + "\n")
 
 
 if __name__ == "__main__":
