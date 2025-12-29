@@ -103,11 +103,10 @@ def resolve_input_files(processed_root: str | Path, cfg: BasicStatsConfig) -> Li
 
     if isinstance(cfg.file_suffix, str) and cfg.file_suffix.upper() == "AUTO":
         with_files = sorted(root.rglob("*_with_text.json"))
-        without_files = sorted(root.rglob("*_without_text.json"))
-
-        # with, without 합치고(Union), 중복 제거 후 정렬
-        all_files = sorted({*with_files, *without_files})
-        return all_files
+        # AUTO: with_text 우선 사용(중복 집계 방지). 없으면 without_text 사용        
+        if with_files:
+            return with_files
+        return sorted(root.rglob("*_without_text.json"))
 
     return find_review_json_files(root, cfg.file_suffix)
 
@@ -151,14 +150,7 @@ def iter_products_with_reviews(
 
     for item in data_list:
         product_info = item.get("product_info", {}) or {}
-        reviews_blk = item.get("reviews", {}) or {}
-        reviews_list = reviews_blk.get("data") or []
-
-        if not isinstance(reviews_list, list):
-            reviews_list = []
-
-        yield product_info, reviews_list
-
+        yield product_info, []
 
 # =========================
 # 상품과 리뷰의 기본 통계 계산
@@ -168,40 +160,61 @@ def iter_products_with_reviews(
 def update_basic_stat_counters(
     counters: Dict[str, Any],
     product_info: Dict[str, Any],
-    reviews_list: List[Dict[str, Any]],
+    reviews_list: List[Dict[str, Any]],  # <- 인터페이스 유지(사용은 안 함)
     cfg: BasicStatsConfig,
     meta: Counter,
 ) -> None:
     """
-    상품 1개 단위로 기본 통계 누적 업데이트
+    상품 1개 단위로 기본 통계 누적 업데이트 (메타데이터 기반)
+    - reviews_list 순회하지 않음
+    - product_info의 total_reviews, rating_distribution만 사용
     """
     pid = product_info.get("product_id")
     if not pid:
         meta["missing_product_id"] += 1
         return
 
-    # 문자열 ID를 그대로 사용
     pid = str(pid)
     category = extract_category(product_info)
 
     # 1) 카테고리별 distinct 상품 수
     counters["category_products"][category].add(pid)
 
-    # 2) 상품별 수집 리뷰 수
-    rcnt = len(reviews_list)
-    counters["product_review_cnt"][pid] += rcnt
     meta["total_products_seen"] += 1
-    meta["total_reviews_collected"] += rcnt
 
-    # 3) 별점 분포(전체 + 카테고리별)
-    for r in reviews_list:
-        s = to_int_safe(r.get("score"))
-        if s is None or s not in cfg.valid_scores:
-            meta["invalid_score"] += 1
-            continue
+    # 2) 상품별 리뷰 수: total_reviews 우선, 없으면 rating_distribution 합, 없으면 0
+    total_reviews = to_int_safe(product_info.get("total_reviews"))
 
-        counters["score_cnt"][s] += 1
-        counters["category_score_cnt"][(category, s)] += 1
+    rating_dist = product_info.get("rating_distribution")
+    if isinstance(rating_dist, dict) and rating_dist:
+        # rating_distribution 키가 "5","4" 문자열일 수 있음
+        dist_sum = 0
+        for k, v in rating_dist.items():
+            s = to_int_safe(k)
+            cnt = to_int_safe(v) or 0
+            if s is None or s not in cfg.valid_scores:
+                meta["invalid_score"] += 1
+                continue
+
+            dist_sum += cnt
+            counters["score_cnt"][s] += cnt
+            counters["category_score_cnt"][(category, s)] += cnt
+
+        # total_reviews(메타데이터)와 rating_distribution 합이 불일치한 상품 카운트
+        if total_reviews is not None and total_reviews != dist_sum:
+            meta["review_cnt_mismatch"] += 1
+
+        # total_reviews가 없으면 dist_sum으로 대체
+        if total_reviews is None:
+            total_reviews = dist_sum
+    else:
+        meta["missing_rating_distribution"] += 1
+
+    if total_reviews is None:
+        total_reviews = 0
+
+    counters["product_review_cnt"][pid] += int(total_reviews)
+    meta["total_reviews_collected"] += int(total_reviews)
 
 
 # =======================================
@@ -450,6 +463,9 @@ def run_basic_review_stats(
     meta["file_read_error"] += 0
     meta["missing_product_id"] += 0
     meta["invalid_score"] += 0
+    meta["missing_rating_distribution"] += 0
+    # total_reviews와 rating_distribution 합이 다른 상품 수
+    meta["review_cnt_mismatch"] += 0 
 
     # resolve_input_files 사용 (AUTO 지원)
     files = resolve_input_files(processed_root, cfg)
