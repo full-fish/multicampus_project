@@ -102,6 +102,18 @@ def preprocess_and_tokenize_file(args):
         # 4. 결측치 제거 및 분할
         with_text, without_text = drop_missing_val_splitter(data)
 
+        # 4-1. without_text의 product_id 수정 (카테고리_without_원본ID)
+        for product in without_text.get("data", []):
+            p_info = product.get("product_info", {})
+            original_id = p_info.get("product_id", p_info.get("id", ""))
+            category = unicodedata.normalize("NFC", str(base_name))
+            unique_product_id = unicodedata.normalize(
+                "NFC", f"{category}_without_{original_id}"
+            )
+            p_info["product_id"] = unique_product_id
+            p_info["original_product_id"] = original_id
+            p_info["category_file"] = category
+
         # 5. 토큰화 (한 번만 수행하고 저장)
         all_tokens = []  # Word2Vec 학습용
         tokenized_data = []  # 나중에 벡터화에 사용할 토큰 저장
@@ -109,11 +121,11 @@ def preprocess_and_tokenize_file(args):
         for product_idx, product in enumerate(with_text.get("data", [])):
             p_info = product.get("product_info", {})
 
-            # product_id를 전역적으로 고유하게 만들기 (카테고리_원본ID)
+            # product_id를 전역적으로 고유하게 만들기 (카테고리_with_원본ID)
             original_id = p_info.get("product_id", p_info.get("id", ""))
             category = unicodedata.normalize("NFC", str(base_name))  # NFC 정규화
             unique_product_id = unicodedata.normalize(
-                "NFC", f"{category}_{original_id}"
+                "NFC", f"{category}_with_{original_id}"
             )  # NFC 정규화
 
             # product_info에 고유 ID 업데이트

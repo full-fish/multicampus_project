@@ -9,6 +9,7 @@ dependencies:
   - pandas
   - pyarrow
   - matplotlib
+  - seaborn
   - pip
   - pip:
       - gensim
