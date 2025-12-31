@@ -237,6 +237,21 @@ for i, pid in enumerate(top_3_product_ids):
     ax1.set_xlabel("월")
     ax1.set_ylabel("리뷰 수")
 
+    x_labels = rating_dist.index.tolist()
+    new_labels = []
+    prev_year = None
+    for idx, ym in enumerate(x_labels):
+        year, month = ym.split("-")
+        if idx % 2 == 0:  # 2달마다 표시
+            if year != prev_year:  # 연도가 바뀌면 연도 포함
+                new_labels.append(f"{year}-{month}")
+                prev_year = year
+            else:
+                new_labels.append(month)
+        else:
+            new_labels.append("")
+    ax1.set_xticklabels(new_labels, rotation=45, ha="right")
+
     # 평균 평점 텍스트 표시
     for x, (ym, mean) in enumerate(monthly_mean.items()):
         y_pos = rating_dist.loc[ym].sum() * 0.95
@@ -247,6 +262,22 @@ for i, pid in enumerate(top_3_product_ids):
     ax2.set_title(f"{product_name}\n월별 리뷰 수")
     ax2.set_xlabel("월")
     ax2.set_ylabel("리뷰 수")
+
+    x_labels2 = monthly_count.index.tolist()
+    new_labels2 = []
+    prev_year2 = None
+    for idx, ym in enumerate(x_labels2):
+        year, month = ym.split("-")
+        if idx % 2 == 0:  # 2달마다 표시
+            if year != prev_year2:  # 연도가 바뀌면 연도 포함
+                new_labels2.append(f"{year}-{month}")
+                prev_year2 = year
+            else:
+                new_labels2.append(month)
+        else:
+            new_labels2.append("")
+    ax2.set_xticks(range(len(new_labels2)))  # tick 위치 먼저 설정
+    ax2.set_xticklabels(new_labels2, rotation=45, ha="right")
 
 plt.tight_layout()
 plt.show()
