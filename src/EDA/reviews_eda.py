@@ -173,7 +173,7 @@ print(df_review_all.info())
 print(df_review_all["source"].value_counts())
 
 
-# 기본 통계 / 분석 (기존 유지)
+# 기본 통계/분석
 product_score = (
     df_review_all.groupby("product_id")
     .agg(
@@ -186,35 +186,35 @@ product_score = (
 
 print(product_score)
 
-# 리뷰 많은 상품 TOP 5
-top_5_products = (
+# 리뷰 많은 상품 TOP 6
+top_6_products = (
     df_review_all.groupby("product_id")
     .size()
     .reset_index(name="total_reviews")
     .merge(df_product[["product_id", "product_name"]], on="product_id", how="left")
     .sort_values("total_reviews", ascending=False)
-    .head(5)
+    .head(6)
 )
 
-print("\n===== 리뷰 많은 상품 TOP 5 =====")
-print(top_5_products)
+print("\n===== 리뷰 많은 상품 TOP 6 =====")
+print(top_6_products)
 
 
-# 리뷰 많은 상품 TOP 3
+# 리뷰 많은 상품 TOP 6
 # 상품별 월별 평점 분포 + 월별 리뷰 수 + 평균 평점
-top_3_product_ids = top_5_products["product_id"].head(3).tolist()
+top_6_product_ids = top_6_products["product_id"].tolist()
 
-df_top3 = df_review_all[df_review_all["product_id"].isin(top_3_product_ids)].dropna(
+df_top6 = df_review_all[df_review_all["product_id"].isin(top_6_product_ids)].dropna(
     subset=["review_date", "score"]
 )
 
-df_top3["year_month"] = df_top3["review_date"].dt.to_period("M").astype(str)
+df_top6["year_month"] = df_top6["review_date"].dt.to_period("M").astype(str)
 
 fig = plt.figure(figsize=(18, 12))
 gs = gridspec.GridSpec(3, 2, figure=fig)
 
-for i, pid in enumerate(top_3_product_ids):
-    df_p = df_top3[df_top3["product_id"] == pid]
+for i, pid in enumerate(top_6_product_ids):
+    df_p = df_top6[df_top6["product_id"] == pid]
 
     product_name = (
         df_product.loc[df_product["product_id"] == pid, "product_name"].values[0]
@@ -231,11 +231,11 @@ for i, pid in enumerate(top_3_product_ids):
     # 월별 평점 분포
     rating_dist = df_p.groupby(["year_month", "score"]).size().unstack(fill_value=0)
 
-    ax1 = fig.add_subplot(gs[i, 0])
+    ax1 = fig.add_subplot(gs[i // 2, i % 2])
     rating_dist.plot(kind="bar", stacked=True, ax=ax1)
-    ax1.set_title(f"{product_name}\n월별 평점 분포")
+    ax1.set_title(f"{product_name}\n월별 평점 & 리뷰 수 분포", pad=20)
     ax1.set_xlabel("월")
-    ax1.set_ylabel("리뷰 수")
+    ax1.set_ylabel("리뷰 수(평점 분포)")
 
     x_labels = rating_dist.index.tolist()
     new_labels = []
@@ -257,11 +257,10 @@ for i, pid in enumerate(top_3_product_ids):
         y_pos = rating_dist.loc[ym].sum() * 0.95
         ax1.text(x, y_pos, f"★ {mean:.2f}", ha="center", fontsize=9)
 
-    ax2 = fig.add_subplot(gs[i, 1])
-    monthly_count.plot(marker="o", ax=ax2)
-    ax2.set_title(f"{product_name}\n월별 리뷰 수")
-    ax2.set_xlabel("월")
+    ax2 = ax1.twinx()
+    monthly_count.plot(color='blue', linewidth=1, label="리뷰 수", ax=ax2)
     ax2.set_ylabel("리뷰 수")
+    ax2.legend(loc="upper right")
 
     x_labels2 = monthly_count.index.tolist()
     new_labels2 = []
@@ -286,35 +285,35 @@ plt.show()
 # ===== 시각화 1 =====
 fig, axes = plt.subplots(2, 3, figsize=(15, 8))
 
-rating_sum = df_total_rating.loc[
-    0, ["rating_1", "rating_2", "rating_3", "rating_4", "rating_5"]
-]
+rating_sum = df_total_rating.loc[0, ["rating_1", "rating_2", "rating_3", "rating_4", "rating_5"]]
 rating_sum.index = ["1점", "2점", "3점", "4점", "5점"]
-rating_sum.plot(kind="bar", ax=axes[0, 0], color=sns.color_palette("YlOrRd", 5))
+rating_sum.plot(kind="barh", ax=axes[0, 0], color=sns.color_palette("YlOrRd", 5))
 axes[0, 0].set_title("전체 상품 평점 분포", weight="bold")
 axes[0, 0].set_ylabel("리뷰 수")
 axes[0, 0].grid(axis="y", alpha=0.3)
 
 axes[0, 1].hist(df_review["char_length"], bins=50, color="pink")
 axes[0, 1].set_title("리뷰 길이 분포", weight="bold")
+axes[0, 1].set_xlim(0, 2000)
 
-axes[0, 2].scatter(
-    df_review["char_length"], df_review["helpful_count"], alpha=0.3, s=10, color="green"
-)
+axes[0, 2].scatter(df_review["char_length"], df_review["helpful_count"], alpha=0.3, s=10, color="green")
 axes[0, 2].set_xscale("log")
 axes[0, 2].set_yscale("log")
 axes[0, 2].set_title("리뷰 길이 & Helpful_count", weight="bold")
+axes[0, 2].set_xlabel("리뷰 길이")
+axes[0, 2].set_ylabel("Helpful_count")
 
-sns.violinplot(
-    x="score", y="char_length", data=df_review, palette="Set2", ax=axes[1, 0]
-)
+sns.violinplot(x="score", y="char_length", data=df_review, palette="Set2", ax=axes[1, 0])
 axes[1, 0].set_title("평점별 리뷰 길이", weight="bold")
+axes[1, 0].set_xlabel("평점")
+axes[1, 0].set_ylabel("리뷰 길이")
+axes[1, 0].set_ylim(0, 1500)
 
-sns.boxplot(
-    x="score", y="helpful_count", data=df_review, palette="Pastel1", ax=axes[1, 1]
-)
+sns.boxplot(x="score", y="helpful_count", data=df_review, palette="Pastel1", ax=axes[1, 1])
 axes[1, 1].set_yscale("log")
 axes[1, 1].set_title("평점별 helpful_count", weight="bold")
+axes[1, 1].set_xlabel("평점")
+axes[1, 1].set_ylabel("Helpful_count")
 
 axes[1, 2].scatter(
     product_score["mean_score"],
@@ -325,14 +324,14 @@ axes[1, 2].scatter(
     edgecolor="blue",
 )
 axes[1, 2].set_title("상품 평균 평점 & Helpful_count", weight="bold")
+axes[1, 2].set_xlabel("상품 평균 평점")
+axes[1, 2].set_ylabel("Helpful_count")
 
 plt.tight_layout()
 plt.show()
 
 
-df_product["product_name_short"] = (df_product["product_name"]).str.slice(
-    0, 30
-)  # 상품명 30자 까지만
+df_product["product_name_short"] = (df_product["product_name"]).str.slice(0, 30)  # 상품명 30자 까지만
 
 # ===== 시각화 2 =====
 fig = plt.figure(figsize=(15, 8))
@@ -360,17 +359,29 @@ top10.set_index("product_name_short")["avg_rating"].plot(
     kind="barh", color="slateblue", ax=ax1
 )
 
+# print(top10[rating_cols].head(10))
+
 ax1.set_title("TOP 10 상품 평균 평점", weight="bold")
+ax1.set_xlim(4.5, 5)
 ax1.invert_yaxis()
 
 
 # 평점 & 상품 히트맵
+# 상품명 merge
+df_review_all = df_review_all.merge(
+    df_product[["product_id", "product_name_short"]],
+    on="product_id",
+    how="left"
+)
+
+rating_dist = df_review_all.groupby(["product_name_short", "score"]).size().unstack(fill_value=0)   # 상품별 평점 분포
+rating_dist = rating_dist.loc[rating_dist.sum(axis=1).sort_values(ascending=False).head(10).index]  # 상위 10개 상품 필터링
+rating_dist.columns = rating_dist.columns.astype(str)   # 컬럼이 숫자형이면 문자열로 변환해서 정렬
+
 ax2 = fig.add_subplot(gs[0, 1])
 
-heatmap_df = top10.set_index("product_name_short")[rating_cols]
-
 sns.heatmap(
-    heatmap_df,
+    rating_dist,
     cmap="YlOrRd",
     annot=True,
     fmt=".0f",
