@@ -25,8 +25,11 @@ TEMP_TOKENS_DIR = "./data/temp_tokens"
 # "word2vec": Word2Vec 사용 (기본, 빠름)
 # "bert": BERT 사용 (느리지만 성능 좋음)
 # "both": 둘 다 생성 (word2vec, bert 컬럼 모두 포함)
-VECTORIZER_TYPE = "both"  # 여기를 변경하여 선택
+VECTORIZER_TYPE = "word2vec"  # 여기를 변경하여 선택
 BERT_MODEL_NAME = "klue/bert-base"  # BERT 모델 이름
+
+# ========== 리뷰 필터링 설정 ==========
+MIN_REVIEWS_PER_PRODUCT = 30  # 이 개수 이하의 리뷰를 가진 상품 제외
 
 
 def main():
@@ -73,7 +76,13 @@ def main():
 
     # 병렬로 전처리 + 토큰화 실행
     args_list = [
-        (input_path, PRE_DATA_DIR, PROCESSED_DATA_DIR, TEMP_TOKENS_DIR)
+        (
+            input_path,
+            PRE_DATA_DIR,
+            PROCESSED_DATA_DIR,
+            TEMP_TOKENS_DIR,
+            MIN_REVIEWS_PER_PRODUCT,
+        )
         for input_path in json_files
     ]
 

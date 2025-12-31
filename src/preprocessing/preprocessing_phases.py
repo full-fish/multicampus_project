@@ -54,8 +54,9 @@ def preprocess_and_tokenize_file(args):
     Phase 1: 파일 전처리 + 토큰화 (병렬 실행)
     - 포맷 전처리, 브랜드 표준화, 결측치 제거, 토큰화를 한 번에 수행
     - 토큰 결과를 임시 파일로 저장
+    - 리뷰 개수가 최소 개수 미만인 상품 제외
     """
-    input_path, pre_data_dir, processed_data_dir, temp_tokens_dir = args
+    input_path, pre_data_dir, processed_data_dir, temp_tokens_dir, min_reviews = args
 
     file_name = os.path.basename(input_path)
     stopwords = load_stopwords()
@@ -102,7 +103,32 @@ def preprocess_and_tokenize_file(args):
         # 4. 결측치 제거 및 분할
         with_text, without_text = drop_missing_val_splitter(data)
 
-        # 4-1. without_text의 product_id 수정 (카테고리_without_원본ID)
+        # 4-1. 리뷰 개수 필터링: 최소 개수 미만인 상품 제외
+        filtered_with_text = []
+        for product in with_text.get("data", []):
+            review_count = len(product.get("reviews", {}).get("data", []))
+            if review_count >= min_reviews:
+                filtered_with_text.append(product)
+
+        filtered_without_text = []
+        for product in without_text.get("data", []):
+            review_count = product.get("product_info", {}).get("total_reviews", 0)
+            if review_count >= min_reviews:
+                filtered_without_text.append(product)
+
+        # 필터링된 결과로 교체
+        with_text["data"] = filtered_with_text
+        without_text["data"] = filtered_without_text
+
+        # 필터링 후 데이터가 없으면 스킵
+        if not with_text.get("data") and not without_text.get("data"):
+            return {
+                "status": "skipped",
+                "file": file_name,
+                "reason": f"모든 상품의 리뷰가 {min_reviews}개 미만",
+            }
+
+        # 4-2. without_text의 product_id 수정 (카테고리_without_원본ID)
         for product in without_text.get("data", []):
             p_info = product.get("product_info", {})
             original_id = p_info.get("product_id", p_info.get("id", ""))
