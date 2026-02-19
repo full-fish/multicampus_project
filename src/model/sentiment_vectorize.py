@@ -258,6 +258,7 @@ def main():
             "price": product.get("price"),
             "delivery_type": product.get("delivery_type"),
             "product_url": product.get("product_url"),
+            "img_url": product.get("img_url"),
             "skin_type": product.get("skin_type", "미분류"),
             "top_keywords": [
                 kw.get("word", "") for kw in sentiment.get("positive_special", [])[:5]
@@ -488,6 +489,7 @@ def main():
             if os.path.exists(drive_data):
                 print(f"\n기존 데이터 백업 삭제 중: {drive_data}")
                 shutil.rmtree(drive_data)
+                time.sleep(5)  # 구글 드라이브가 동기화할 시간을 2초 정도 줍니다.
 
             # 재벡터화 데이터 백업
             if os.path.exists(OUTPUT_DATA_DIR):

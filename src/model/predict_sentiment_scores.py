@@ -189,7 +189,7 @@ def main():
 
     # 경로 설정
     MODEL_PATH = "./models/roberta_sentiment_XGBoost.joblib"  # roberta 모델 사용
-    PROCESSED_DATA_DIR = "./data/processed_data"
+    PROCESSED_DATA_DIR = "./data/new_processed_data"
     PARTITIONED_REVIEWS_DIR = os.path.join(PROCESSED_DATA_DIR, "partitioned_reviews")
     PRODUCTS_FINAL_DIR = os.path.join(PROCESSED_DATA_DIR, "integrated_products_final")
     VECTOR_TYPE = "roberta_sentiment"  # 사용할 벡터 타입

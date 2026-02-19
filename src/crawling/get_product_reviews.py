@@ -49,7 +49,7 @@ def get_product_reviews(
     except:
         pass
 
-    time.sleep(random.uniform(3, 5))
+    time.sleep(random.uniform(5, 6))
 
     # -------------------------------------------------------
     # [기본 정보 파싱]
@@ -59,7 +59,7 @@ def get_product_reviews(
 
     product_id = str(rank_num)
     product_name = "Unknown"
-    time.sleep(0.5)
+    time.sleep(1)
     try:
         product_name_h1 = soup.select_one("h1.product-title.twc-text-lg.twc-text-black")
         if product_name_h1:

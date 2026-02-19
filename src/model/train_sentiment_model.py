@@ -92,14 +92,14 @@ VECTOR_TYPES_TO_USE = [
 # 2) ML 모델 선택
 #    사용 가능: "Logistic", "DecisionTree","LightGBM", "XGBoost","RandomForest", "Voting", "Stacking","SVM"
 ML_MODELS_TO_USE = [
-    "Logistic",
-    "LightGBM",
+    # "Logistic",
+    # "LightGBM",
     "XGBoost",
-    "DecisionTree",
-    "RandomForest",
-    "Voting",
-    "Stacking",
-    "SVM",
+    # "DecisionTree",
+    # "RandomForest",
+    # "Voting",
+    # "Stacking",
+    # "SVM",
 ]
 
 
@@ -680,12 +680,12 @@ def main():
     # 경로 설정 (Colab 환경 고려)
     if is_colab():
         BASE_DIR = "/content"
-        PROCESSED_DATA_DIR = os.path.join(BASE_DIR, "data/processed_data")
+        PROCESSED_DATA_DIR = os.path.join(BASE_DIR, "data/new_processed_data")
         MODEL_OUTPUT_DIR = os.path.join(BASE_DIR, "models")
         FINETUNE_IDS_PATH = os.path.join(BASE_DIR, "data/finetune_used_ids.csv")
     else:
         BASE_DIR = "./data"
-        PROCESSED_DATA_DIR = "./data/processed_data"
+        PROCESSED_DATA_DIR = "./data/new_processed_data"
         MODEL_OUTPUT_DIR = "./models"
         FINETUNE_IDS_PATH = os.path.join(BASE_DIR, "finetune_used_ids.csv")
 

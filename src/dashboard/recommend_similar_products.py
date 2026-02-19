@@ -192,7 +192,7 @@ def recommend_similar_products(
             )
 
         is_semantic_search = True
-        weights = [0.99, 0.01, 0]  # 문맥 검색 시 유사도 비중 극대화
+        weights = [1, 0, 0]  # 문맥 검색 시 유사도 비중 극대화
         target_name = query_text
         print(f"✓ 검색 쿼리: {query_text}")
         print(
@@ -231,7 +231,7 @@ def recommend_similar_products(
             df = df.assign(
                 cosine_similarity=similarities,
                 recommend_score=lambda x: (
-                    (x["cosine_similarity"] ** 20) * weights[0]  # 유사도 제곱 적용
+                    (x["cosine_similarity"]) * weights[0]  # 유사도 제곱 적용
                     + x["sentiment_score"] * weights[1]
                     + x["normalized_rating"] * weights[2]
                 ),
@@ -328,9 +328,15 @@ def print_recommendations(recommendations: Dict[str, List[Dict[str, Any]]]):
         print("-" * 110)
 
         for rank, rec in enumerate(products, 1):
-            # None 값 처리
-            product_name = rec["product_name"] or ""
-            brand = rec["brand"] or ""
+            # None 값 및 NaN 처리
+            product_name = rec.get("product_name") or ""
+            brand = rec.get("brand") or ""
+
+            # float/NaN 처리
+            if not isinstance(product_name, str):
+                product_name = ""
+            if not isinstance(brand, str):
+                brand = ""
 
             # 길이 제한 적용
             product_name = (
@@ -360,74 +366,74 @@ def print_recommendations(recommendations: Dict[str, List[Dict[str, Any]]]):
 
 # 사용 예시
 if __name__ == "__main__":
-    # # 예시 1: 특정 카테고리에서 추천
-    # print("=" * 100)
-    # print("예시 1: 로션 카테고리에서 유사 상품 추천")
-    # print("=" * 100)
-
-    # results = recommend_similar_products(
-    #     product_id="로션_1",
-    #     categories=["로션"],
-    #     top_n=2,
-    # )
-
-    # print_recommendations(results)
-    # print("\n\n")
-    # print("=" * 100)
-
-    # # 예시 2: 모든 카테고리에서 추천
-    # print("\n\n" + "=" * 100)
-    # print("예시 2: 모든 카테고리에서 유사 상품 추천")
-    # print("=" * 100)
-
-    # results = recommend_similar_products(
-    #     product_id="로션_1",
-    #     categories=None,
-    #     top_n=2,
-    # )
-
-    # print_recommendations(results)
-
-    # # 예시 3: 상품 미입력 (필터링된것중 전체 랭킹)
-    # print("\n\n" + "=" * 100)
-    # print("예시 3: 상품 미입력시 전체 랭킹")
-    # print("=" * 100)
-
-    # results = recommend_similar_products(
-    #     product_id=None,
-    #     categories=None,
-    #     top_n=2,
-    # )
-
-    # print_recommendations(results)
-
-    # 예시 4: 문맥 검색 (BERTVectorizer 필요 - Semantic 모델)
-    print("\n\n" + "=" * 100)
-    print("예시 4: 문맥 검색 (Semantic 벡터 사용)")
+    # 예시 1: 특정 카테고리에서 추천
+    print("=" * 100)
+    print("예시 1: 로션 카테고리에서 유사 상품 추천")
     print("=" * 100)
 
-    vectorizer = BERTVectorizer(model_name="./models/fine_tuned/roberta_semantic_final")
-
     results = recommend_similar_products(
-        query_text="지성 피부에 좋은 묽은 로션",
-        # query_text="여드름에 좋으면서 꾸덕꾸덕한 질감에 향이 좋은 로션 그리고 건성 피부에 좋으면 좋겠어",
-        categories=None,
-        top_n=5,
-        vectorizer=vectorizer,
+        product_id="로션_1",
+        categories=["로션"],
+        top_n=2,
     )
 
     print_recommendations(results)
+    print("\n\n")
+    print("=" * 100)
 
+    # 예시 2: 모든 카테고리에서 추천
     print("\n\n" + "=" * 100)
-
-    vectorizer = BERTVectorizer(model_name="./models/fine_tuned/roberta_semantic_final")
+    print("예시 2: 모든 카테고리에서 유사 상품 추천")
+    print("=" * 100)
 
     results = recommend_similar_products(
-        query_text="건성 피부에 좋은 기름지고 꾸덕한 로션",
-        # query_text="여드름에 좋으면서 꾸덕꾸덕한 질감에 향이 좋은 로션 그리고 건성 피부에 좋으면 좋겠어",
+        product_id="로션_1",
         categories=None,
-        top_n=5,
-        vectorizer=vectorizer,
+        top_n=2,
     )
 
     print_recommendations(results)
+
+    # 예시 3: 상품 미입력 (필터링된것중 전체 랭킹)
+    print("\n\n" + "=" * 100)
+    print("예시 3: 상품 미입력시 전체 랭킹")
+    print("=" * 100)
+
+    results = recommend_similar_products(
+        product_id=None,
+        categories=None,
+        top_n=2,
+    )
+
+    print_recommendations(results)
+
+    # 예시 4: 문맥 검색 (BERTVectorizer 필요 - Semantic 모델)
+    # print("\n\n" + "=" * 100)
+    # print("예시 4: 문맥 검색 (Semantic 벡터 사용)")
+    # print("=" * 100)
+
+    # vectorizer = BERTVectorizer(model_name="./models/fine_tuned/roberta_semantic_final")
+
+    # results = recommend_similar_products(
+    #     query_text="지성 피부에 좋은 기름지지 않은 묽은 로션",
+    #     # query_text="여드름에 좋으면서 꾸덕꾸덕한 질감에 향이 좋은 로션 그리고 건성 피부에 좋으면 좋겠어",
+    #     categories=None,
+    #     top_n=5,
+    #     vectorizer=vectorizer,
+    # )
+
+    # print_recommendations(results)
+
+    # print("\n\n" + "=" * 100)
+
+    # vectorizer = BERTVectorizer(model_name="./models/fine_tuned/roberta_semantic_final")
+
+    # results = recommend_similar_products(
+    #     query_text="건성 피부에 좋은 기름지고 꾸덕한 로션",
+    #     # query_text="여드름에 좋으면서 꾸덕꾸덕한 질감에 향이 좋은 로션 그리고 건성 피부에 좋으면 좋겠어",
+    #     categories=None,
+    #     top_n=5,
+    #     vectorizer=vectorizer,
+    # )
+
+    # print_recommendations(results)
