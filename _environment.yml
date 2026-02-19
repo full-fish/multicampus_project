@@ -28,5 +28,9 @@ dependencies:
       - accelerate
       - streamlit
       - sentence-transformers
+      - plotly
+      - awswrangler
+      - boto3
+      - huggingface-hub
 # 설치 법
 # conda env update -f _environment.yml

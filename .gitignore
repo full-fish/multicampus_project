@@ -12,3 +12,7 @@ models/
 
 test.py
 *.joblib
+
+# Streamlit secrets (AWS credentials 등 민감정보)
+.streamlit/secrets.toml
+src/dashboard/.streamlit/secrets.toml

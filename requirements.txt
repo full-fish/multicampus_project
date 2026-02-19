@@ -29,6 +29,14 @@ wordcloud
 
 # 웹 애플리케이션
 streamlit
+plotly
+
+# AWS
+awswrangler
+boto3
+
+# Hugging Face
+huggingface-hub
 
 # 유틸리티
 tqdm
