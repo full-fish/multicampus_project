@@ -3,7 +3,14 @@ import numpy as np
 import pandas as pd
 import glob
 from typing import List, Optional, Dict, Any
-from services.athena_queries import load_products_data_from_athena
+
+
+# Athena 함수는 AWS 모드일 때만 lazy import
+def _lazy_load_athena():
+    from services.athena_queries import load_products_data_from_athena
+
+    return load_products_data_from_athena
+
 
 # BERTVectorizer 임포트 (로컬 모델 사용 시 필요, API 모드에서는 선택적)
 import sys
@@ -27,7 +34,7 @@ def cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
         vec1 = np.array(vec1)
     if isinstance(vec2, list):
         vec2 = np.array(vec2)
-    
+
     # 벡터가 문자열인 경우 (예: "[-0.1676, ...]") numpy 배열로 변환
     if isinstance(vec1, str):
         try:
@@ -48,6 +55,76 @@ def cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
         return 0.0
 
     return float(np.dot(vec1, vec2) / (norm1 * norm2))
+
+
+def load_products_data_local(
+    categories: Optional[List[str]] = None,
+    vector_type: str = "roberta_semantic",
+) -> pd.DataFrame:
+    """
+    로컬 Parquet에서 상품 데이터 로드 (벡터 포함)
+    프로젝트 루트 기준: data/new_processed_data/integrated_products_final/
+    """
+    from pathlib import Path
+
+    # 프로젝트 루트 계산: services/recommend_similar_products.py → 4단계 상위
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
+    products_dir = (
+        project_root / "data" / "new_processed_data" / "integrated_products_final"
+    )
+
+    if not products_dir.exists():
+        print(f"[오류] 로컬 데이터 디렉토리가 없습니다: {products_dir}")
+        return pd.DataFrame()
+
+    import pyarrow.dataset as ds
+    import pyarrow as pa
+
+    try:
+        dataset = ds.dataset(products_dir, format="parquet", partitioning="hive")
+        all_products = dataset.to_table().to_pandas()
+    except pa.lib.ArrowTypeError:
+        # 스키마 불일치(large_string vs string) 시 개별 파일 로드
+        parquet_files = glob.glob(str(products_dir / "category=*" / "data.parquet"))
+        dfs = []
+        for f in parquet_files:
+            part_df = pd.read_parquet(f)
+            cat = f.split("category=")[1].split("/")[0]
+            part_df["category"] = cat
+            dfs.append(part_df)
+        all_products = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+    if "category" in all_products.columns:
+        import unicodedata
+
+        all_products["category"] = (
+            all_products["category"].astype(str).str.replace("_", "/", regex=False)
+        )
+        # macOS NFD → NFC 정규화 (파일시스템 인코딩 차이 해결)
+        all_products["category"] = all_products["category"].apply(
+            lambda x: unicodedata.normalize("NFC", x) if isinstance(x, str) else x
+        )
+
+    # 카테고리 필터링
+    if categories:
+        import unicodedata
+
+        # 검색어도 NFC 정규화
+        expanded = []
+        for c in categories:
+            c_nfc = unicodedata.normalize("NFC", c) if isinstance(c, str) else c
+            expanded.append(c_nfc)
+            expanded.append(c_nfc.replace("/", "_"))
+            expanded.append(c_nfc.replace("_", "/"))
+        expanded = list(set(expanded))
+        all_products = all_products[all_products["category"].isin(expanded)]
+
+    # 벡터 컬럼 확인
+    vector_col = f"product_vector_{vector_type}"
+    if vector_col not in all_products.columns:
+        print(f"[경고] '{vector_col}' 컬럼이 없습니다.")
+
+    return all_products
 
 
 def load_products_data(
@@ -193,36 +270,62 @@ def recommend_similar_products(
             else:
                 all_products = data
     else:
-        # Athena에서 로드 (기존 방식)
-        # product_id 모드일 때는 전체 데이터에서 기준 상품을 찾고,
-        # 추천 결과만 categories로 필터링
-        if product_id is not None:
-            # 기준 상품은 전체 데이터에서 찾기
-            print(f"기준 상품 로드 중... (product_id={product_id})")
-            base_products = load_products_data_from_athena(
-                categories=None, vector_type=vector_type
-            )
+        # 데이터 소스 확인 (session_state에서)
+        import streamlit as _st
 
-            target_product = base_products[base_products["product_id"] == product_id]
+        _data_source = _st.session_state.get("data_source", "local")
 
-            if target_product.empty:
-                print(f"[오류] 상품 ID '{product_id}'를 찾을 수 없습니다.")
-                return {}
-
-            target_product = target_product.iloc[0]
-            print(f"✓ 기준 상품: {target_product.get('product_name', product_id)}")
-
-            # 비교 대상 상품은 categories로 필터링
-            print(f"비교 대상 상품 로드 중... (카테고리: {categories or '전체'})")
-            all_products = load_products_data_from_athena(
+        if _data_source == "local":
+            # 로컬 Parquet에서 로드
+            all_products = load_products_data_local(
                 categories=categories, vector_type=vector_type
             )
+            if product_id is not None:
+                target_product = all_products[all_products["product_id"] == product_id]
+                if target_product.empty:
+                    print(f"[오류] 상품 ID '{product_id}'를 찾을 수 없습니다.")
+                    return {}
+                target_product = target_product.iloc[0]
+                print(f"✓ 기준 상품: {target_product.get('product_name', product_id)}")
+                # 카테고리 필터링 (기준 상품은 전체에서 이미 찾음)
+                if categories:
+                    filtered = all_products[all_products["category"].isin(categories)]
+                    # 기준 상품이 필터에 포함되지 않을 수 있으므로 합치기
+                    all_products = pd.concat(
+                        [
+                            filtered,
+                            all_products[all_products["product_id"] == product_id],
+                        ]
+                    ).drop_duplicates("product_id")
         else:
-            # query_text나 전체 랭킹 모드는 기존대로
-            print(f"상품 데이터 로드 중... (카테고리: {categories or '전체'})")
-            all_products = load_products_data_from_athena(
-                categories=categories, vector_type=vector_type
-            )
+            # Athena에서 로드 (기존 방식)
+            load_products_data_from_athena = _lazy_load_athena()
+            if product_id is not None:
+                print(f"기준 상품 로드 중... (product_id={product_id})")
+                base_products = load_products_data_from_athena(
+                    categories=None, vector_type=vector_type
+                )
+
+                target_product = base_products[
+                    base_products["product_id"] == product_id
+                ]
+
+                if target_product.empty:
+                    print(f"[오류] 상품 ID '{product_id}'를 찾을 수 없습니다.")
+                    return {}
+
+                target_product = target_product.iloc[0]
+                print(f"✓ 기준 상품: {target_product.get('product_name', product_id)}")
+
+                print(f"비교 대상 상품 로드 중... (카테고리: {categories or '전체'})")
+                all_products = load_products_data_from_athena(
+                    categories=categories, vector_type=vector_type
+                )
+            else:
+                print(f"상품 데이터 로드 중... (카테고리: {categories or '전체'})")
+                all_products = load_products_data_from_athena(
+                    categories=categories, vector_type=vector_type
+                )
 
     if all_products.empty:
         print("[경고] 상품 데이터를 찾을 수 없습니다.")

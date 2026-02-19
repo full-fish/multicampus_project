@@ -6,30 +6,161 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import re
+import os
+from pathlib import Path
 
-from utils.load_data import make_df
-from services.athena_queries import (
-    fetch_all_products,
-    fetch_reviews_by_product,
-    fetch_top_reviews_text,
-)
+from utils.load_data import make_df, load_raw_df
 
 
+# =========================
+# 데이터 소스 헬퍼
+# =========================
+def _get_data_source() -> str:
+    """현재 데이터 소스 설정 반환 ('local' 또는 'aws')"""
+    return st.session_state.get("data_source", "local")
+
+
+def _get_project_root() -> Path:
+    """프로젝트 루트 디렉토리 반환"""
+    # src/dashboard/utils/data_utils.py → 3단계 상위 = src/dashboard
+    dashboard_dir = Path(__file__).resolve().parent.parent
+    # src/dashboard → 2단계 상위 = 프로젝트 루트
+    return dashboard_dir.parent.parent
+
+
+def _get_local_data_dir() -> Path:
+    """로컬 데이터 디렉토리 경로 반환"""
+    return _get_project_root() / "data" / "new_processed_data"
+
+
+def _import_athena_functions():
+    """AWS 모드일 때만 Athena 함수 import (lazy)"""
+    from services.athena_queries import (
+        fetch_all_products,
+        fetch_reviews_by_product,
+        fetch_top_reviews_text,
+    )
+
+    return fetch_all_products, fetch_reviews_by_product, fetch_top_reviews_text
+
+
+# =========================
+# 로컬 데이터 로딩 함수들
+# =========================
+@st.cache_data(show_spinner=False)
+def load_products_local() -> pd.DataFrame:
+    """로컬 Parquet에서 전체 상품 데이터 로드"""
+    import pyarrow.dataset as ds
+    import pyarrow as pa
+
+    products_dir = _get_local_data_dir() / "integrated_products_final"
+
+    # 스키마 불일치(large_string vs string) 처리
+    try:
+        dataset = ds.dataset(products_dir, format="parquet", partitioning="hive")
+        df = dataset.to_table().to_pandas()
+    except pa.lib.ArrowTypeError:
+        # 파티션별 개별 로드 후 병합
+        import glob
+
+        parquet_files = glob.glob(str(products_dir / "category=*" / "data.parquet"))
+        dfs = []
+        for f in parquet_files:
+            part_df = pd.read_parquet(f)
+            # 디렉토리명에서 카테고리 추출
+            cat = f.split("category=")[1].split("/")[0]
+            part_df["category"] = cat
+            dfs.append(part_df)
+        df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+    if "category" in df.columns:
+        import unicodedata
+
+        df["category"] = df["category"].astype(str).str.replace("_", "/", regex=False)
+        # macOS NFD → NFC 정규화
+        df["category"] = df["category"].apply(
+            lambda x: unicodedata.normalize("NFC", x) if isinstance(x, str) else x
+        )
+
+    return df
+
+
+@st.cache_data(show_spinner=False)
+def load_reviews_local(product_id: str) -> pd.DataFrame:
+    """로컬 Parquet에서 특정 상품의 리뷰 데이터 로드"""
+    reviews_dir = _get_local_data_dir() / "partitioned_reviews"
+    if not reviews_dir.exists():
+        return pd.DataFrame()
+
+    import pyarrow.dataset as ds
+
+    dataset = ds.dataset(reviews_dir, format="parquet", partitioning="hive")
+    table = dataset.to_table(filter=ds.field("product_id") == product_id)
+    df = table.to_pandas()
+
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        df = df.sort_values("date", ascending=False)
+
+    return df
+
+
+def load_top_reviews_local(
+    product_id: str, product_info: pd.Series, limit: int = 5, sentiment_type: str = None
+) -> pd.DataFrame:
+    """로컬 Parquet에서 대표 리뷰 텍스트 로드"""
+    import json
+
+    if sentiment_type == "negative":
+        ids = product_info.get("negative_representative_ids", [])
+    else:
+        ids = product_info.get("positive_representative_ids", [])
+
+    if isinstance(ids, str):
+        ids = ids.strip()
+        if not ids or ids in ("null", "NULL"):
+            return pd.DataFrame()
+        try:
+            ids = json.loads(ids)
+        except Exception:
+            return pd.DataFrame()
+
+    # numpy array → list 변환
+    if isinstance(ids, np.ndarray):
+        ids = ids.tolist()
+
+    if ids is None or not isinstance(ids, list) or not ids:
+        return pd.DataFrame()
+
+    review_ids = ids[:limit]
+
+    all_reviews = load_reviews_local(product_id)
+    if all_reviews.empty:
+        return pd.DataFrame()
+
+    review_ids_int = [int(rid) for rid in review_ids]
+    result = all_reviews[all_reviews["id"].isin(review_ids_int)]
+
+    cols = ["id", "full_text", "title", "content", "score", "sentiment_score", "date"]
+    available_cols = [c for c in cols if c in result.columns]
+    return result[available_cols].copy()
+
+
+# =========================
+# 통합 데이터 로딩 (로컬/AWS 자동 분기)
+# =========================
 def load_top_reviews_athena(
     product_id: str, product_info: pd.Series, limit: int = 5, sentiment_type: str = None
 ) -> pd.DataFrame:
     """
-    Athena에서 대표 리뷰 텍스트 N개 로드
-
-    Args:
-        product_id: 상품 ID
-        product_info: 제품 정보 Series
-        limit: 로드할 리뷰 개수
-        sentiment_type: "positive" 또는 "negative" (None이면 긍정 대표 리뷰)
-
-    Returns:
-        pd.DataFrame: 리뷰 데이터
+    대표 리뷰 텍스트 N개 로드 (데이터 소스에 따라 로컬/Athena 자동 분기)
     """
+    # 로컬 모드면 로컬 함수 사용
+    if _get_data_source() == "local":
+        return load_top_reviews_local(product_id, product_info, limit, sentiment_type)
+
+    # AWS 모드
+    _, _, fetch_top_reviews_text = _import_athena_functions()
     import json
 
     # sentiment_type에 따라 적절한 ID 배열 선택
@@ -79,12 +210,16 @@ DEFAULT_IMAGE_URL = "https://tr.rbxcdn.com/180DAY-981c49e917ba903009633ed32b3d0e
 @st.cache_data(ttl=300, show_spinner=False)
 def load_products_from_athena() -> pd.DataFrame:
     """Athena에서 전체 상품 데이터 로드"""
+    fetch_all_products, _, _ = _import_athena_functions()
     return fetch_all_products()
 
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_reviews_athena(product_id: str) -> pd.DataFrame:
-    """Athena에서 리뷰 데이터 로드"""
+    """리뷰 데이터 로드 (데이터 소스에 따라 로컬/Athena 자동 분기)"""
+    if _get_data_source() == "local":
+        return load_reviews_local(product_id)
+    _, fetch_reviews_by_product, _ = _import_athena_functions()
     return fetch_reviews_by_product(product_id)
 
 
@@ -110,7 +245,13 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
     # main/middle/sub 매핑
     MAIN_TO_MIDDLES = {
-        "메이크업": ["립메이크업", "바디메이크업", "베이스메이크업", "아이메이크업", "치크메이크업"],
+        "메이크업": [
+            "립메이크업",
+            "바디메이크업",
+            "베이스메이크업",
+            "아이메이크업",
+            "치크메이크업",
+        ],
         "선케어/태닝": ["선케어/태닝"],
         "스킨케어": ["스킨케어"],
         "클렌징/필링": ["클렌징/필링"],
@@ -119,12 +260,57 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     MIDDLE_TO_SUBS = {
         "립메이크업": ["립스틱", "립케어", "틴트/립글로스"],
         "바디메이크업": ["바디메이크업", "헤나/타투스티커"],
-        "베이스메이크업": ["메이크업픽서", "베이스/프라이머", "컨실러", "쿠션/팩트", "파우더/파우더팩트","파운데이션", "BB/CC크림/톤업크림"],
-        "아이메이크업": ["마스카라", "아이라이너", "아이메이크업/포인트리무버", "아이브로우","아이섀도", "아이팔레트"],
+        "베이스메이크업": [
+            "메이크업픽서",
+            "베이스/프라이머",
+            "컨실러",
+            "쿠션/팩트",
+            "파우더/파우더팩트",
+            "파운데이션",
+            "BB/CC크림/톤업크림",
+        ],
+        "아이메이크업": [
+            "마스카라",
+            "아이라이너",
+            "아이메이크업/포인트리무버",
+            "아이브로우",
+            "아이섀도",
+            "아이팔레트",
+        ],
         "치크메이크업": ["블러셔", "하이라이터"],
-        "선케어/태닝": ["선스틱", "선스프레이", "선케어/선크림/선로션", "선쿠션/선팩트", "알로에/수딩/애프터선", "자외선차단패치", "태닝오일"],
-        "스킨케어": ["기초세트", "로션", "미스트", "스킨", "에센스/세럼/앰플", "오일","멀티밤/스틱", "아이/넥크림", "올인원", "페이셜크림"],
-        "클렌징/필링": ["리무버", "스크럽/필링", "클렌징밤/크림/로션", "클렌징비누","클렌징세트", "클렌징오일", "클렌징워터", "클렌징젤/파우더", "클렌징티슈/시트", "클렌징폼"],
+        "선케어/태닝": [
+            "선스틱",
+            "선스프레이",
+            "선케어/선크림/선로션",
+            "선쿠션/선팩트",
+            "알로에/수딩/애프터선",
+            "자외선차단패치",
+            "태닝오일",
+        ],
+        "스킨케어": [
+            "기초세트",
+            "로션",
+            "미스트",
+            "스킨",
+            "에센스/세럼/앰플",
+            "오일",
+            "멀티밤/스틱",
+            "아이/넥크림",
+            "올인원",
+            "페이셜크림",
+        ],
+        "클렌징/필링": [
+            "리무버",
+            "스크럽/필링",
+            "클렌징밤/크림/로션",
+            "클렌징비누",
+            "클렌징세트",
+            "클렌징오일",
+            "클렌징워터",
+            "클렌징젤/파우더",
+            "클렌징티슈/시트",
+            "클렌징폼",
+        ],
     }
 
     def category_mapping():
@@ -169,9 +355,16 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
     # 카테고리 경로
     df["category_path_norm"] = np.where(
-        df["main_category"].astype(str).str.strip() == df["middle_category"].astype(str).str.strip(),
-        df["main_category"].astype(str).str.strip() + " > " + df["sub_category"].astype(str).str.strip(),
-        df["main_category"].astype(str).str.strip() + " > " + df["middle_category"].astype(str).str.strip() + " > " + df["sub_category"].astype(str).str.strip(),
+        df["main_category"].astype(str).str.strip()
+        == df["middle_category"].astype(str).str.strip(),
+        df["main_category"].astype(str).str.strip()
+        + " > "
+        + df["sub_category"].astype(str).str.strip(),
+        df["main_category"].astype(str).str.strip()
+        + " > "
+        + df["middle_category"].astype(str).str.strip()
+        + " > "
+        + df["sub_category"].astype(str).str.strip(),
     )
 
     mask_unknown = df["main_category"].eq("")
@@ -245,8 +438,11 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def prepare_dataframe() -> pd.DataFrame:
-    """메인 DataFrame 준비"""
-    product_df = load_products_from_athena()
+    """메인 DataFrame 준비 (데이터 소스에 따라 로컬/Athena 자동 분기)"""
+    if _get_data_source() == "local":
+        product_df = load_products_local()
+    else:
+        product_df = load_products_from_athena()
 
     try:
         df = make_df(product_df)

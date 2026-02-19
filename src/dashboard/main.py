@@ -51,6 +51,13 @@ from utils.data_utils import (
 
 sys.path.append(os.path.dirname(__file__))
 
+# =========================
+# ✅ 데이터 소스 설정
+# =========================
+# "local" : 로컬 Parquet 파일 사용 (AWS 연결 불필요)
+# "aws"   : AWS Athena 사용 (secrets.toml에 AWS 자격증명 필요)
+DATA_SOURCE = "local"
+
 
 # =========================
 # ✅ 세션 상태 초기화
@@ -226,10 +233,14 @@ def main():
     # 초기화
     st.set_page_config(
         page_title="화장품 추천 대시보드",
-        page_icon="💄",
+        page_icon="",
         layout="wide",
     )
     init_session_state()
+
+    # 데이터 소스 설정을 session_state에 저장 (다른 모듈에서 참조)
+    st.session_state["data_source"] = DATA_SOURCE
+
     apply_scroll()
 
     # 데이터 로드
